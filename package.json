@@ -1,0 +1,42 @@
+{
+  "name": "skill-compiler",
+  "version": "0.1.0",
+  "description": "Converts skill/framework documentation into compressed AGENTS.md indexes for AI coding agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "skill-compiler": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "test": "vitest",
+    "lint": "eslint src/",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "agents",
+    "ai",
+    "coding-assistant",
+    "documentation",
+    "skills"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.4.0",
+    "commander": "^13.0.0",
+    "chokidar": "^4.0.0",
+    "glob": "^11.0.0",
+    "yaml": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
