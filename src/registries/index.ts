@@ -187,6 +187,72 @@ export const registries: FrameworkRegistry[] = [
         includes: ['**/*.md'],
         priority: ['framework/react', 'guides'],
     },
+    // ========== v0.2.0 Additions ==========
+    {
+        name: 'nuxt',
+        displayName: 'Nuxt',
+        packageMatch: ['nuxt'],
+        configMatch: ['nuxt.config.*'],
+        docSource: {
+            type: 'github',
+            repo: 'nuxt/nuxt',
+            path: 'docs',
+            branch: 'main',
+        },
+        includes: ['**/*.md'],
+        priority: ['guide', 'api'],
+    },
+    {
+        name: 'remix',
+        displayName: 'Remix',
+        packageMatch: ['@remix-run/react', '@remix-run/node'],
+        docSource: {
+            type: 'github',
+            repo: 'remix-run/remix',
+            path: 'docs',
+            branch: 'main',
+        },
+        includes: ['**/*.md'],
+        priority: ['guides', 'api'],
+    },
+    {
+        name: 'hono',
+        displayName: 'Hono',
+        packageMatch: ['hono'],
+        docSource: {
+            type: 'github',
+            repo: 'honojs/hono',
+            path: 'docs',
+            branch: 'main',
+        },
+        includes: ['**/*.md'],
+    },
+    {
+        name: 'effect',
+        displayName: 'Effect',
+        packageMatch: ['effect', '@effect/platform'],
+        docSource: {
+            type: 'github',
+            repo: 'Effect-TS/effect',
+            path: 'docs',
+            branch: 'main',
+        },
+        includes: ['**/*.md', '**/*.mdx'],
+    },
+    {
+        name: 'bun',
+        displayName: 'Bun',
+        packageMatch: ['bun'],
+        configMatch: ['bunfig.toml'],
+        docSource: {
+            type: 'github',
+            repo: 'oven-sh/bun',
+            path: 'docs',
+            branch: 'main',
+        },
+        includes: ['**/*.md'],
+        priority: ['api', 'runtime'],
+    },
 ];
 
 /**

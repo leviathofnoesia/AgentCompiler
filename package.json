@@ -1,6 +1,6 @@
 {
   "name": "skill-compiler",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Converts skill/framework documentation into compressed AGENTS.md indexes for AI coding agents",
   "type": "module",
   "main": "dist/index.js",
@@ -22,7 +22,11 @@
     "documentation",
     "skills"
   ],
-  "author": "",
+  "author": "leviathofnoesia",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leviathofnoesia/AgentCompiler.git"
+  },
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
