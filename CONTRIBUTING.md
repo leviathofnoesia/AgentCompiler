@@ -50,8 +50,8 @@ Open an issue with:
 
 ```bash
 # Clone the repo
-git clone https://github.com/AgentCompiler/skill-compiler.git
-cd skill-compiler
+git clone https://github.com/leviathofnoesia/AgentCompiler.git
+cd AgentCompiler
 
 # Install dependencies
 npm install

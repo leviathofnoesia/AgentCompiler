@@ -3,7 +3,7 @@
 > Converts skill/framework documentation into compressed AGENTS.md indexes for AI coding agents
 
 [![npm version](https://badge.fury.io/js/skill-compiler.svg)](https://www.npmjs.com/package/skill-compiler)
-[![GitHub](https://img.shields.io/github/license/AgentCompiler/skill-compiler)](https://github.com/AgentCompiler/skill-compiler)
+[![GitHub](https://img.shields.io/github/license/leviathofnoesia/AgentCompiler)](https://github.com/leviathofnoesia/AgentCompiler)
 
 ## 📖 Background
 
