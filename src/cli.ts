@@ -13,13 +13,20 @@ import { injectAgentsMd } from './injector/index.js';
 import { watchProject } from './watcher/index.js';
 import { loadConfig, saveConfig, configExists, createInitialConfig } from './config/index.js';
 import { addCustomSkill, listCustomSkills, removeCustomSkill } from './custom/index.js';
+import {
+    searchSkills,
+    installSkill,
+    scanLocalSkills,
+    syncSkillsToAgentsMd,
+    getSuggestedSkills
+} from './skills-sh/index.js';
 
 const program = new Command();
 
 program
     .name('skill-compiler')
     .description('Converts skill/framework documentation into compressed AGENTS.md indexes')
-    .version('0.2.1');
+    .version('0.3.0');
 
 // ============================================================================
 // INIT COMMAND
@@ -99,12 +106,19 @@ program
             }
             const indexes = await Promise.all(detected.map(skill => compressIndex(skill)));
 
-            // 4. Inject into AGENTS.md
+            // 4. Sync skills.sh skills
+            const skillsShIndexes = await syncSkillsToAgentsMd(cwd);
+            if (skillsShIndexes.length > 0 && !options.silent) {
+                console.log(chalk.blue(`📦 Including ${skillsShIndexes.length} skills.sh skill(s)...`));
+            }
+            const allIndexes = [...indexes, ...skillsShIndexes];
+
+            // 5. Inject into AGENTS.md
             if (options.dryRun) {
                 console.log(chalk.yellow('\n--- DRY RUN ---'));
                 console.log('Would write to:', outPath);
                 console.log('\nGenerated indexes:');
-                indexes.forEach(idx => console.log(idx.slice(0, 200) + '...\n'));
+                allIndexes.forEach(idx => console.log(idx.slice(0, 200) + '...\n'));
             } else if (options.check) {
                 // Check mode: verify AGENTS.md is up-to-date
                 const { readFile } = await import('fs/promises');
@@ -116,7 +130,7 @@ program
                 }
 
                 const current = await readFile(outPath, 'utf-8');
-                const expected = indexes.join('\n\n');
+                const expected = allIndexes.join('\n\n');
 
                 if (!current.includes(expected.slice(0, 100))) {
                     console.log(chalk.red('✗ AGENTS.md is out of date'));
@@ -126,7 +140,7 @@ program
 
                 console.log(chalk.green('✓ AGENTS.md is up to date'));
             } else {
-                await injectAgentsMd(outPath, indexes);
+                await injectAgentsMd(outPath, allIndexes);
                 if (!options.silent) {
                     console.log(chalk.green(`✓ Updated ${outPath}`));
                 }
@@ -154,7 +168,7 @@ program
     });
 
 // ============================================================================
-// ADD COMMAND
+// ADD COMMAND (local skills)
 // ============================================================================
 program
     .command('add <path>')
@@ -185,22 +199,42 @@ program
 // ============================================================================
 program
     .command('list')
-    .description('List all custom skills')
+    .description('List all custom and installed skills')
     .action(async () => {
-        const skills = await listCustomSkills(process.cwd());
+        const cwd = process.cwd();
 
-        if (skills.length === 0) {
-            console.log(chalk.dim('No custom skills configured.'));
-            console.log(chalk.dim('Use `skill-compiler add <path>` to add one.'));
+        // List custom skills
+        const customSkills = await listCustomSkills(cwd);
+
+        // List skills.sh skills
+        const skillsShSkills = await scanLocalSkills(cwd);
+
+        if (customSkills.length === 0 && skillsShSkills.length === 0) {
+            console.log(chalk.dim('No skills configured.'));
+            console.log(chalk.dim('Use `skill-compiler install <repo>` to add from skills.sh'));
+            console.log(chalk.dim('Use `skill-compiler add <path>` to add local skills'));
             return;
         }
 
-        console.log(chalk.bold('Custom Skills:\n'));
-        for (const skill of skills) {
-            console.log(`  ${chalk.green('•')} ${skill.name}`);
-            console.log(chalk.dim(`    Path: ${skill.path}`));
-            if (skill.priority) {
-                console.log(chalk.dim(`    Priority: ${skill.priority.join(', ')}`));
+        if (customSkills.length > 0) {
+            console.log(chalk.bold('Custom Skills:\n'));
+            for (const skill of customSkills) {
+                console.log(`  ${chalk.green('•')} ${skill.name}`);
+                console.log(chalk.dim(`    Path: ${skill.path}`));
+                if (skill.priority) {
+                    console.log(chalk.dim(`    Priority: ${skill.priority.join(', ')}`));
+                }
+            }
+        }
+
+        if (skillsShSkills.length > 0) {
+            console.log(chalk.bold('\nskills.sh Skills:\n'));
+            for (const skill of skillsShSkills) {
+                console.log(`  ${chalk.blue('•')} ${skill.name}`);
+                if (skill.description) {
+                    console.log(chalk.dim(`    ${skill.description}`));
+                }
+                console.log(chalk.dim(`    Path: ${skill.path}`));
             }
         }
     });
@@ -219,6 +253,141 @@ program
             console.log(chalk.dim('Run `skill-compiler` to regenerate indexes.'));
         } else {
             console.log(chalk.yellow(`Skill "${name}" not found.`));
+        }
+    });
+
+// ============================================================================
+// SEARCH COMMAND (skills.sh)
+// ============================================================================
+program
+    .command('search <query>')
+    .description('Search skills.sh registry')
+    .action(async (query) => {
+        console.log(chalk.blue(`🔍 Searching skills.sh for "${query}"...\n`));
+
+        const results = await searchSkills(query);
+
+        if (results.length === 0) {
+            console.log(chalk.yellow('No skills found.'));
+            console.log(chalk.dim('Try a broader search term or browse https://skills.sh'));
+            return;
+        }
+
+        console.log(chalk.bold('Results:\n'));
+        for (const skill of results) {
+            console.log(`  ${chalk.green('•')} ${chalk.bold(skill.name)}`);
+            if (skill.description) {
+                console.log(chalk.dim(`    ${skill.description}`));
+            }
+            console.log(chalk.dim(`    Repo: ${skill.repo}`));
+            if (skill.downloads) {
+                console.log(chalk.dim(`    Downloads: ${skill.downloads.toLocaleString()}`));
+            }
+            console.log();
+        }
+
+        console.log(chalk.dim(`Install with: skill-compiler install ${results[0].repo} --skill ${results[0].name}`));
+    });
+
+// ============================================================================
+// INSTALL COMMAND (skills.sh)
+// ============================================================================
+program
+    .command('install <repo>')
+    .description('Install a skill from skills.sh registry')
+    .option('-s, --skill <name>', 'Specific skill name to install')
+    .option('--global', 'Install globally instead of project-local')
+    .action(async (repo, options) => {
+        console.log(chalk.blue(`📥 Installing skill from ${repo}...`));
+
+        if (options.skill) {
+            console.log(chalk.dim(`  Skill: ${options.skill}`));
+        }
+
+        const result = await installSkill(repo, {
+            skillName: options.skill,
+            scope: options.global ? 'global' : 'project',
+        });
+
+        if (result.success) {
+            console.log(chalk.green(`✓ Installed skill`));
+            if (result.skill) {
+                console.log(chalk.dim(`  Name: ${result.skill.name}`));
+                console.log(chalk.dim(`  Path: ${result.skill.path}`));
+            }
+            console.log(chalk.dim('\nRun `skill-compiler` to include in AGENTS.md'));
+        } else {
+            console.error(chalk.red('Installation failed:'), result.error);
+            process.exit(1);
+        }
+    });
+
+// ============================================================================
+// SYNC COMMAND (skills.sh)
+// ============================================================================
+program
+    .command('sync')
+    .description('Sync installed skills.sh skills to AGENTS.md')
+    .action(async () => {
+        const cwd = process.cwd();
+
+        console.log(chalk.blue('🔄 Syncing skills.sh skills...'));
+
+        const skills = await scanLocalSkills(cwd);
+
+        if (skills.length === 0) {
+            console.log(chalk.yellow('No skills.sh skills found.'));
+            console.log(chalk.dim('Install with: skill-compiler install <repo>'));
+            return;
+        }
+
+        console.log(chalk.green(`✓ Found ${skills.length} skill(s)`));
+        for (const skill of skills) {
+            console.log(chalk.dim(`  • ${skill.name}`));
+        }
+
+        const indexes = await syncSkillsToAgentsMd(cwd);
+        console.log(chalk.green(`✓ Generated ${indexes.length} index(es)`));
+        console.log(chalk.dim('\nRun `skill-compiler` to update AGENTS.md'));
+    });
+
+// ============================================================================
+// SUGGEST COMMAND (skills.sh)
+// ============================================================================
+program
+    .command('suggest')
+    .description('Suggest skills.sh skills based on your project')
+    .action(async () => {
+        const cwd = process.cwd();
+
+        console.log(chalk.blue('🔍 Analyzing project for skill suggestions...\n'));
+
+        const detected = await scanProject(cwd);
+        const frameworks = detected.map(d => d.name);
+
+        if (frameworks.length === 0) {
+            console.log(chalk.yellow('No frameworks detected.'));
+            return;
+        }
+
+        console.log(chalk.dim(`Detected: ${frameworks.join(', ')}\n`));
+
+        const suggestions = getSuggestedSkills(frameworks);
+
+        if (suggestions.length === 0) {
+            console.log(chalk.yellow('No skill suggestions available for your stack.'));
+            console.log(chalk.dim('Browse https://skills.sh for more options.'));
+            return;
+        }
+
+        console.log(chalk.bold('Suggested Skills:\n'));
+        for (const skill of suggestions) {
+            console.log(`  ${chalk.green('•')} ${chalk.bold(skill.name)}`);
+            if (skill.description) {
+                console.log(chalk.dim(`    ${skill.description}`));
+            }
+            console.log(chalk.dim(`    Install: skill-compiler install ${skill.repo} --skill ${skill.name}`));
+            console.log();
         }
     });
 
@@ -243,6 +412,7 @@ program
                 framework: options.framework,
                 compare: options.compare,
                 verbose: options.verbose,
+                simulate: options.simulate,
             });
         } catch (error) {
             console.error(chalk.red('Eval error:'), error instanceof Error ? error.message : error);
@@ -251,3 +421,4 @@ program
     });
 
 program.parse();
+

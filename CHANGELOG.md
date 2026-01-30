@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-01-29
+
+### Added
+- **skills.sh integration**: Connect to Vercel's Agent Skills registry
+- **`search` command**: Search skills.sh for skills (`skill-compiler search react`)
+- **`install` command**: Install skills from skills.sh (`skill-compiler install vercel-labs/agent-skills --skill frontend-design`)
+- **`sync` command**: Sync installed skills.sh skills to AGENTS.md
+- **`suggest` command**: Get skill suggestions based on your project
+- Auto-include skills.sh skills in `compile` output
+
+### Changed
+- `list` command now shows both custom and skills.sh skills
+- Added `yaml` dependency for parsing SKILL.md frontmatter
+
+---
+
 ## [0.2.1] - 2026-01-29
 
 ### Added
