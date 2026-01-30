@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-01-29
+
+### Added
+- **Real LLM evals**: OpenAI integration for running actual agent tasks
+- **GitHub Action**: `action.yml` for CI/CD workflows
+- **Semantic compression v2**: Includes breaking changes and new API highlights
+- **`--simulate` flag**: Run evals with simulated results (no API key needed)
+
+### Changed
+- Improved compression format with framework-specific knowledge
+- Added ora spinner dependency for better UX
+
+---
+
 ## [0.2.0] - 2026-01-29
 
 ### Added

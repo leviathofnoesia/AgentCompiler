@@ -1,0 +1,72 @@
+name: 'Skill Compiler'
+description: 'Auto-generate AGENTS.md from framework documentation'
+author: 'leviathofnoesia'
+branding:
+  icon: 'book-open'
+  color: 'blue'
+
+inputs:
+  out:
+    description: 'Output path for AGENTS.md'
+    default: './AGENTS.md'
+  only:
+    description: 'Only process specific frameworks (comma-separated)'
+    required: false
+  refresh:
+    description: 'Force refresh cached docs'
+    default: 'false'
+  commit:
+    description: 'Commit changes to repository'
+    default: 'false'
+  commit-message:
+    description: 'Commit message for AGENTS.md update'
+    default: 'chore: update AGENTS.md indexes'
+
+outputs:
+  updated:
+    description: 'Whether AGENTS.md was updated'
+  frameworks:
+    description: 'Detected frameworks (comma-separated)'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install skill-compiler
+      shell: bash
+      run: npm install -g skill-compiler
+
+    - name: Run skill-compiler
+      id: compile
+      shell: bash
+      run: |
+        ARGS="--out ${{ inputs.out }}"
+        if [ -n "${{ inputs.only }}" ]; then
+          ARGS="$ARGS --only ${{ inputs.only }}"
+        fi
+        if [ "${{ inputs.refresh }}" = "true" ]; then
+          ARGS="$ARGS --refresh"
+        fi
+        
+        skill-compiler $ARGS
+        
+        # Check if AGENTS.md was modified
+        if git diff --quiet "${{ inputs.out }}" 2>/dev/null; then
+          echo "updated=false" >> $GITHUB_OUTPUT
+        else
+          echo "updated=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Commit changes
+      if: inputs.commit == 'true' && steps.compile.outputs.updated == 'true'
+      shell: bash
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add "${{ inputs.out }}" .agent-docs/
+        git commit -m "${{ inputs.commit-message }}"
+        git push

@@ -19,7 +19,7 @@ const program = new Command();
 program
     .name('skill-compiler')
     .description('Converts skill/framework documentation into compressed AGENTS.md indexes')
-    .version('0.2.0');
+    .version('0.2.1');
 
 // ============================================================================
 // INIT COMMAND
@@ -97,7 +97,7 @@ program
             if (!options.silent) {
                 console.log(chalk.blue('📦 Compressing documentation indexes...'));
             }
-            const indexes = await Promise.all(detected.map(compressIndex));
+            const indexes = await Promise.all(detected.map(skill => compressIndex(skill)));
 
             // 4. Inject into AGENTS.md
             if (options.dryRun) {

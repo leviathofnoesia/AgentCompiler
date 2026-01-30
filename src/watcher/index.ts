@@ -32,7 +32,7 @@ export async function watchProject(cwd: string, outPath: string): Promise<void> 
                 await fetchDocs(skill);
             }
 
-            const indexes = await Promise.all(detected.map(compressIndex));
+            const indexes = await Promise.all(detected.map(skill => compressIndex(skill)));
             await injectAgentsMd(outPath, indexes);
 
             console.log(chalk.green(`✓ Updated ${outPath}`));
