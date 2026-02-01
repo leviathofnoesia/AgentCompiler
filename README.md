@@ -61,6 +61,45 @@ npx skill-compiler add ./my-skill-docs/
 
 # Run evaluation suite
 npx skill-compiler eval
+
+# Run comprehensive evaluation with LLM integration
+npx skill-compiler eval:comprehensive
+
+# Run evaluation with specific provider
+npx skill-compiler eval --provider anthropic --api-key sk-ant-...
+```
+
+## LLM Integration
+
+AgentCompiler now supports real LLM integration for comprehensive evaluation:
+
+### Supported Providers
+| Provider | Models | API Key Requirement |
+|----------|--------|-------------------|
+| OpenAI | gpt-4o, gpt-4-turbo, gpt-4 | Yes (OPENAI_API_KEY) |
+| Anthropic | claude-3.5-sonnet, claude-3.5-haiku | Yes (ANTHROPIC_API_KEY) |
+| Google | gemini-1.5-pro, gemini-1.5-flash | Yes (GOOGLE_API_KEY) |
+| Mistral | mistral-large, mistral-small, mistral-medium | Yes (MISTRAL_API_KEY) |
+| Ollama | llama3.1, mistral, codellama, gemma2 | No |
+| Groq | llama-3.1-70b-versatile, mixtral-8x7b | Yes (GROQ_API_KEY) |
+| Perplexity | llama-3.1-sonar-large-128k | Yes (PERPLEXITY_API_KEY) |
+
+### Usage Examples
+```bash
+# OpenAI (default)
+npx skill-compiler eval --framework nextjs --api-key sk-...
+
+# Anthropic Claude
+npx skill-compiler eval --framework nextjs --provider anthropic --api-key sk-ant-...
+
+# Local Ollama (no API key needed)
+npx skill-compiler eval --framework nextjs --provider ollama --model llama3
+
+# Google Gemini
+npx skill-compiler eval --framework nextjs --provider google --api-key sk-...
+
+# Mistral AI
+npx skill-compiler eval --framework nextjs --provider mistral --api-key sk-...
 ```
 
 ## Supported Frameworks
@@ -173,7 +212,7 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 ### Ways to contribute:
 - Add new framework registries
 - Improve compression algorithms
-- Enhance the eval suite
+- Enhance the eval suite with LLM integration
 - Report bugs and suggest features
 - Improve documentation
 

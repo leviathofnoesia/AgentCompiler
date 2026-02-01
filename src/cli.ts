@@ -16,10 +16,12 @@ import { addCustomSkill, listCustomSkills, removeCustomSkill } from './custom/in
 import {
     searchSkills,
     installSkill,
+    uninstallSkill,
     scanLocalSkills,
     syncSkillsToAgentsMd,
     getSuggestedSkills
 } from './skills-sh/index.js';
+import { runEval, runComprehensiveEval, getCompressionStats, printDetailedResults, generateEvalReport, type EvalOptions } from './eval/index.js';
 
 const program = new Command();
 
@@ -38,21 +40,28 @@ program
     .option('--only <frameworks>', 'Only process specific frameworks (comma-separated)')
     .option('--force', 'Overwrite existing config')
     .action(async (options) => {
-        const cwd = process.cwd();
+        try {
+            const cwd = process.cwd();
 
-        if (configExists(cwd) && !options.force) {
-            console.log(chalk.yellow('Config file already exists. Use --force to overwrite.'));
-            return;
+            if (configExists(cwd) && !options.force) {
+                console.log(chalk.yellow('⚠️  Config file already exists.'));
+                console.log(chalk.dim('Use --force to overwrite: skill-compiler init --force'));
+                return;
+            }
+
+            const config = createInitialConfig({
+                out: options.out,
+                frameworks: options.only?.split(','),
+            });
+
+            await saveConfig(cwd, config);
+            console.log(chalk.green('✓ Created .skill-compiler.json'));
+            console.log(chalk.dim('\nRun `skill-compiler` to generate AGENTS.md'));
+        } catch (error) {
+            console.error(chalk.red('✗ Failed to initialize configuration:'));
+            console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+            process.exit(1);
         }
-
-        const config = createInitialConfig({
-            out: options.out,
-            frameworks: options.only?.split(','),
-        });
-
-        await saveConfig(cwd, config);
-        console.log(chalk.green('✓ Created .skill-compiler.json'));
-        console.log(chalk.dim('\nRun `skill-compiler` to generate AGENTS.md'));
     });
 
 // ============================================================================
@@ -323,6 +332,34 @@ program
     });
 
 // ============================================================================
+// UNINSTALL COMMAND
+// ============================================================================
+program
+    .command('uninstall <name>')
+    .description('Uninstall a skill (remove from .agent/skills)')
+    .option('--dry-run', 'Show what would be removed without executing')
+    .action(async (name, options) => {
+        if (options.dryRun) {
+            console.log(chalk.yellow('⚠️  Dry run: No files will be deleted.'));
+        }
+        console.log(chalk.blue(`🗑️  Uninstalling skill "${name}"...`));
+
+        const result = await uninstallSkill(name, { dryRun: options.dryRun });
+
+        if (result.success) {
+            if (options.dryRun) {
+                console.log(chalk.green(`✓ Would remove: ${result.deleted?.join(', ')}`));
+            } else {
+                console.log(chalk.green(`✓ Uninstalled skill "${name}"`));
+                console.log(chalk.dim('Run `skill-compiler` to update AGENTS.md'));
+            }
+        } else {
+            console.error(chalk.red('Uninstall failed:'), result.error);
+            process.exit(1);
+        }
+    });
+
+// ============================================================================
 // SYNC COMMAND (skills.sh)
 // ============================================================================
 program
@@ -396,26 +433,118 @@ program
 // ============================================================================
 program
     .command('eval')
-    .description('Run evaluation suite (Vercel methodology)')
-    .option('--framework <name>', 'Evaluate specific framework')
-    .option('--compare <config>', 'Compare configurations: baseline, skill-only, agents-md')
-    .option('--verbose', 'Show detailed results for each test')
-    .option('--simulate', 'Use simulated results (no API key required)')
+    .description('Run Vercel-methodology evaluation suite')
+    .option('-f, --framework <framework>', 'Specific framework to evaluate (nextjs, react, etc.)')
+    .option('-c, --compare <config>', 'Configuration to compare (baseline, skill-only, agents-md)', 'agents-md')
+    .option('-m, --model <model>', 'LLM model to use (gpt-4o, gpt-4, etc.)', 'gpt-4o')
+    .option('-p, --provider <provider>', 'LLM provider (openai, anthropic, google, etc.)', 'openai')
+    .option('--api-key <key>', 'OpenAI API key')
+    .option('--simulate', 'Use simulated results (no API key needed)')
+    .option('--iterations <count>', 'Number of iterations per test', '3')
+    .option('--timeout <seconds>', 'Timeout in seconds', '60')
+    .option('--output <path>', 'Output file path for results')
+    .option('--verbose', 'Show detailed progress')
     .action(async (options) => {
-        const { runEval } = await import('./eval/index.js');
+        const cwd = process.cwd();
 
-        console.log(chalk.blue('🧪 Running evaluation suite (Vercel methodology)...'));
-        console.log(chalk.dim('Using Build/Lint/Test metrics to measure agent effectiveness\n'));
+        if (!options.simulate && !options.apiKey && !process.env.OPENAI_API_KEY) {
+            console.log(chalk.yellow('⚠️  No API key provided. Running in simulation mode.'));
+            console.log(chalk.dim('Set OPENAI_API_KEY or use --api-key for real evals.'));
+        }
+
+        const evalOptions: EvalOptions = {
+            framework: options.framework,
+            compare: options.compare as 'baseline' | 'skill-only' | 'agents-md',
+            model: options.model,
+            provider: options.provider,
+            apiKey: options.apiKey || process.env.OPENAI_API_KEY,
+            simulate: options.simulate,
+            iterations: parseInt(options.iterations),
+            timeout: parseInt(options.timeout),
+            output: options.output,
+            verbose: options.verbose
+        };
 
         try {
-            await runEval(process.cwd(), {
-                framework: options.framework,
-                compare: options.compare,
-                verbose: options.verbose,
-                simulate: options.simulate,
-            });
+            const result = await runEval(evalOptions);
+            
+            if (options.output) {
+                console.log(chalk.green(`✓ Results saved to: ${options.output}`));
+            }
+
+            // Print detailed results
+            printDetailedResults([result]);
         } catch (error) {
-            console.error(chalk.red('Eval error:'), error instanceof Error ? error.message : error);
+            console.error(chalk.red('Evaluation failed:'), error);
+            process.exit(1);
+        }
+    });
+
+// ============================================================================
+// COMPREHENSIVE EVAL COMMAND
+// ============================================================================
+program
+    .command('eval:comprehensive')
+    .description('Run comprehensive evaluation suite for all detected frameworks')
+    .option('-m, --model <model>', 'LLM model to use (gpt-4o, gpt-4, etc.)', 'gpt-4o')
+    .option('-p, --provider <provider>', 'LLM provider (openai, anthropic, google, etc.)', 'openai')
+    .option('--api-key <key>', 'OpenAI API key')
+    .option('--simulate', 'Use simulated results (no API key needed)')
+    .option('--iterations <count>', 'Number of iterations per test', '3')
+    .option('--timeout <seconds>', 'Timeout in seconds', '60')
+    .option('--output <path>', 'Output file path for results')
+    .option('--verbose', 'Show detailed progress')
+    .action(async (options) => {
+        const cwd = process.cwd();
+
+        if (!options.simulate && !options.apiKey && !process.env.OPENAI_API_KEY) {
+            console.log(chalk.yellow('⚠️  No API key provided. Running in simulation mode.'));
+            console.log(chalk.dim('Set OPENAI_API_KEY or use --api-key for real evals.'));
+        }
+
+        const evalOptions: EvalOptions = {
+            model: options.model,
+            provider: options.provider,
+            apiKey: options.apiKey || process.env.OPENAI_API_KEY,
+            simulate: options.simulate,
+            iterations: parseInt(options.iterations),
+            timeout: parseInt(options.timeout),
+            output: options.output,
+            verbose: options.verbose
+        };
+
+        try {
+            const results = await runComprehensiveEval(evalOptions);
+            
+            if (options.output) {
+                console.log(chalk.green(`✓ Results saved to: ${options.output}`));
+            }
+
+            // Print detailed results
+            printDetailedResults(results);
+
+            // Generate report
+            const reportPath = options.output ? options.output.replace('.json', '-report.json') : undefined;
+            if (reportPath) {
+                await generateEvalReport(results, reportPath);
+            }
+        } catch (error) {
+            console.error(chalk.red('Comprehensive evaluation failed:'), error);
+            process.exit(1);
+        }
+    });
+
+// ============================================================================
+// COMPRESSION STATS COMMAND
+// ============================================================================
+program
+    .command('stats')
+    .description('Show compression statistics for detected frameworks')
+    .action(async () => {
+        try {
+            await getCompressionStats(process.cwd());
+        } catch (error) {
+            console.error(chalk.red('Failed to get compression stats:'), error);
             process.exit(1);
         }
     });

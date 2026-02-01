@@ -98,6 +98,37 @@ export async function installSkill(
 }
 
 /**
+ * Uninstall a skill (remove from .agent/skills)
+ */
+export async function uninstallSkill(
+    skillName: string,
+    options: { dryRun?: boolean; cwd?: string } = {}
+): Promise<{ success: boolean; error?: string; deleted?: string[] }> {
+    const cwd = options.cwd || process.cwd();
+    const skillsDir = join(cwd, SKILLS_DIR);
+    const skillPath = join(skillsDir, skillName);
+
+    if (!existsSync(skillPath)) {
+        return { success: false, error: `Skill "${skillName}" not found in ${SKILLS_DIR}` };
+    }
+
+    try {
+        if (options.dryRun) {
+            return { success: true, deleted: [skillPath] };
+        }
+
+        const { rm } = await import('fs/promises');
+        await rm(skillPath, { recursive: true, force: true });
+        return { success: true, deleted: [skillPath] };
+    } catch (error) {
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+        };
+    }
+}
+
+/**
  * Scan local .agent/skills directory for installed skills
  */
 export async function scanLocalSkills(cwd: string): Promise<SkillMetadata[]> {
