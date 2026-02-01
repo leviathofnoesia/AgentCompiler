@@ -15,13 +15,15 @@ const CACHE_TTL_CANARY = 24 * 60 * 60 * 1000; // 1 day
 
 interface FetchOptions {
     refresh?: boolean;
+    cwd?: string;
 }
 
 /**
  * Fetch documentation for a detected skill
  */
 export async function fetchDocs(skill: DetectedSkill, options: FetchOptions = {}): Promise<string> {
-    const cacheDir = join(process.cwd(), CACHE_DIR, skill.name);
+    const cwd = options.cwd || process.cwd();
+    const cacheDir = join(cwd, CACHE_DIR, skill.name);
     const cacheMetaPath = join(cacheDir, '.cache-meta.json');
 
     // Check cache validity
@@ -168,8 +170,9 @@ async function fetchFromUrl(url: string, cacheDir: string): Promise<void> {
 /**
  * Check if cache is valid for a skill
  */
-export async function isCacheValid(skill: DetectedSkill): Promise<boolean> {
-    const cacheMetaPath = join(process.cwd(), CACHE_DIR, skill.name, '.cache-meta.json');
+export async function isCacheValid(skill: DetectedSkill, options: { cwd?: string } = {}): Promise<boolean> {
+    const cwd = options.cwd || process.cwd();
+    const cacheMetaPath = join(cwd, CACHE_DIR, skill.name, '.cache-meta.json');
 
     if (!existsSync(cacheMetaPath)) return false;
 

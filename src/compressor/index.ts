@@ -24,17 +24,19 @@ interface FileNode {
 interface CompressionOptions {
     format?: 'v1' | 'v2';
     targetSize?: number;
+    cwd?: string;
 }
 
 /**
  * Compress documentation into a minimal index string
  */
 export async function compressIndex(skill: DetectedSkill, options?: CompressionOptions): Promise<string> {
-    const cacheDir = join(process.cwd(), '.agent-docs', skill.name);
+    const cwd = options?.cwd || process.cwd();
+    const cacheDir = join(cwd, '.agent-docs', skill.name);
     const registry = getRegistry(skill.name);
 
     // Load config for compression settings
-    const config = await loadConfig(process.cwd());
+    const config = await loadConfig(cwd);
     const format = options?.format || config.compression?.format || 'v1';
     const targetSize = options?.targetSize || config.compression?.targetSize || DEFAULT_TARGET_SIZE_BYTES;
 
@@ -371,12 +373,13 @@ function compressAggressively(index: string, skill: DetectedSkill, targetSize: n
 /**
  * Get compression stats
  */
-export async function getCompressionStats(skill: DetectedSkill): Promise<{
+export async function getCompressionStats(skill: DetectedSkill, options: { cwd?: string } = {}): Promise<{
     originalSize: number;
     compressedSize: number;
     reductionPercent: number;
 }> {
-    const cacheDir = join(process.cwd(), '.agent-docs', skill.name);
+    const cwd = options.cwd || process.cwd();
+    const cacheDir = join(cwd, '.agent-docs', skill.name);
     let originalSize = 0;
 
     // Calculate original docs size
@@ -399,7 +402,7 @@ export async function getCompressionStats(skill: DetectedSkill): Promise<{
 
     originalSize = await calcDirSize(cacheDir);
 
-    const compressed = await compressIndex(skill);
+    const compressed = await compressIndex(skill, { cwd });
     const compressedSize = Buffer.byteLength(compressed, 'utf-8');
 
     return {
