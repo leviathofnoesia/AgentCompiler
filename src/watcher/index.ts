@@ -5,10 +5,7 @@
 
 import { watch } from 'chokidar';
 import chalk from 'chalk';
-import { scanProject } from '../scanner/index.js';
-import { fetchDocs } from '../fetcher/index.js';
-import { compressIndex } from '../compressor/index.js';
-import { injectAgentsMd } from '../injector/index.js';
+import { compileProject } from '../core/compile.js';
 
 const DEBOUNCE_MS = 1000;
 
@@ -22,20 +19,21 @@ export async function watchProject(cwd: string, outPath: string): Promise<void> 
         try {
             console.log(chalk.blue('\n🔄 Detected changes, updating...'));
 
-            const detected = await scanProject(cwd);
-            if (detected.length === 0) {
+            const result = await compileProject({
+                cwd,
+                outPath,
+                includeSkillsSh: false,
+                silent: true,
+            });
+
+            if (result.status === 'no-skills') {
                 console.log(chalk.yellow('No frameworks detected.'));
                 return;
             }
 
-            for (const skill of detected) {
-                await fetchDocs(skill);
+            if (result.status === 'written') {
+                console.log(chalk.green(`✓ Updated ${outPath}`));
             }
-
-            const indexes = await Promise.all(detected.map(skill => compressIndex(skill)));
-            await injectAgentsMd(outPath, indexes);
-
-            console.log(chalk.green(`✓ Updated ${outPath}`));
         } catch (error) {
             console.error(chalk.red('Update failed:'), error instanceof Error ? error.message : error);
         }
