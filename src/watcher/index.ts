@@ -28,7 +28,6 @@ export async function watchProject(cwd: string, outPath: string): Promise<void> 
 
             if (result.status === 'no-skills') {
                 console.log(chalk.yellow('No frameworks detected.'));
-                return;
             }
 
             if (result.status === 'written') {
