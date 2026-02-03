@@ -9,6 +9,7 @@ import { scanProject } from '../scanner/index.js';
 import { fetchDocs } from '../fetcher/index.js';
 import { compressIndex } from '../compressor/index.js';
 import { injectAgentsMd } from '../injector/index.js';
+import { syncSkillsToAgentsMd } from '../skills-sh/index.js';
 
 const DEBOUNCE_MS = 1000;
 
@@ -25,7 +26,6 @@ export async function watchProject(cwd: string, outPath: string): Promise<void> 
             const detected = await scanProject(cwd);
             if (detected.length === 0) {
                 console.log(chalk.yellow('No frameworks detected.'));
-                return;
             }
 
             for (const skill of detected) {
@@ -33,7 +33,15 @@ export async function watchProject(cwd: string, outPath: string): Promise<void> 
             }
 
             const indexes = await Promise.all(detected.map(skill => compressIndex(skill)));
-            await injectAgentsMd(outPath, indexes);
+            const skillsShIndexes = await syncSkillsToAgentsMd(cwd);
+            const allIndexes = [...indexes, ...skillsShIndexes];
+
+            if (allIndexes.length === 0) {
+                console.log(chalk.yellow('No frameworks or skills detected.'));
+                return;
+            }
+
+            await injectAgentsMd(outPath, allIndexes);
 
             console.log(chalk.green(`✓ Updated ${outPath}`));
         } catch (error) {
