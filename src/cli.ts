@@ -6,21 +6,11 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { scanProject } from './scanner/index.js';
-import { fetchDocs } from './fetcher/index.js';
-import { compressIndex } from './compressor/index.js';
-import { injectAgentsMd } from './injector/index.js';
+import { compileProject } from './core/compile.js';
 import { watchProject } from './watcher/index.js';
 import { loadConfig, saveConfig, configExists, createInitialConfig } from './config/index.js';
 import { addCustomSkill, listCustomSkills, removeCustomSkill } from './custom/index.js';
-import {
-    searchSkills,
-    installSkill,
-    uninstallSkill,
-    scanLocalSkills,
-    syncSkillsToAgentsMd,
-    getSuggestedSkills
-} from './skills-sh/index.js';
+import { searchSkills, installSkill, uninstallSkill, scanLocalSkills, syncSkillsToAgentsMd, getSuggestedSkills } from './skills-sh/index.js';
 import { runEval, runComprehensiveEval, getCompressionStats, printDetailedResults, generateEvalReport, type EvalOptions } from './eval/index.js';
 
 const program = new Command();
@@ -84,75 +74,20 @@ program
             const config = await loadConfig(cwd);
             const outPath = options.out || config.out || './AGENTS.md';
             const only = options.only?.split(',') || config.only;
+            const result = await compileProject({
+                cwd,
+                outPath,
+                only,
+                exclude: config.exclude,
+                refresh: options.refresh,
+                dryRun: options.dryRun,
+                check: options.check,
+                includeSkillsSh: true,
+                silent: options.silent,
+            });
 
-            if (!options.silent) {
-                console.log(chalk.blue('🔍 Scanning project for frameworks...'));
-            }
-
-            // 1. Scan for frameworks/skills
-            const detected = await scanProject(cwd, { only });
-
-            if (detected.length === 0) {
-                console.log(chalk.yellow('No frameworks detected. Nothing to do.'));
-                return;
-            }
-
-            if (!options.silent) {
-                console.log(chalk.green(`✓ Found ${detected.length} framework(s): ${detected.map(d => d.name).join(', ')}`));
-            }
-
-            // 2. Fetch docs for each framework
-            for (const skill of detected) {
-                if (!options.silent) {
-                    console.log(chalk.blue(`📥 Fetching docs for ${skill.name}@${skill.version}...`));
-                }
-                await fetchDocs(skill, { refresh: options.refresh });
-            }
-
-            // 3. Compress into indexes
-            if (!options.silent) {
-                console.log(chalk.blue('📦 Compressing documentation indexes...'));
-            }
-            const indexes = await Promise.all(detected.map(skill => compressIndex(skill)));
-
-            // 4. Sync skills.sh skills
-            const skillsShIndexes = await syncSkillsToAgentsMd(cwd);
-            if (skillsShIndexes.length > 0 && !options.silent) {
-                console.log(chalk.blue(`📦 Including ${skillsShIndexes.length} skills.sh skill(s)...`));
-            }
-            const allIndexes = [...indexes, ...skillsShIndexes];
-
-            // 5. Inject into AGENTS.md
-            if (options.dryRun) {
-                console.log(chalk.yellow('\n--- DRY RUN ---'));
-                console.log('Would write to:', outPath);
-                console.log('\nGenerated indexes:');
-                allIndexes.forEach(idx => console.log(idx.slice(0, 200) + '...\n'));
-            } else if (options.check) {
-                // Check mode: verify AGENTS.md is up-to-date
-                const { readFile } = await import('fs/promises');
-                const { existsSync } = await import('fs');
-
-                if (!existsSync(outPath)) {
-                    console.log(chalk.red('✗ AGENTS.md does not exist'));
-                    process.exit(1);
-                }
-
-                const current = await readFile(outPath, 'utf-8');
-                const expected = allIndexes.join('\n\n');
-
-                if (!current.includes(expected.slice(0, 100))) {
-                    console.log(chalk.red('✗ AGENTS.md is out of date'));
-                    console.log(chalk.dim('Run `skill-compiler` to update'));
-                    process.exit(1);
-                }
-
-                console.log(chalk.green('✓ AGENTS.md is up to date'));
-            } else {
-                await injectAgentsMd(outPath, allIndexes);
-                if (!options.silent) {
-                    console.log(chalk.green(`✓ Updated ${outPath}`));
-                }
+            if (result.status === 'checked' && result.checkStatus !== 'up-to-date') {
+                process.exit(1);
             }
         } catch (error) {
             console.error(chalk.red('Error:'), error instanceof Error ? error.message : error);
@@ -443,6 +378,7 @@ program
     .option('--iterations <count>', 'Number of iterations per test', '3')
     .option('--timeout <seconds>', 'Timeout in seconds', '60')
     .option('--output <path>', 'Output file path for results')
+    .option('--refresh-indexes', 'Refresh cached docs/indexes before eval')
     .option('--verbose', 'Show detailed progress')
     .action(async (options) => {
         const cwd = process.cwd();
@@ -462,7 +398,8 @@ program
             iterations: parseInt(options.iterations),
             timeout: parseInt(options.timeout),
             output: options.output,
-            verbose: options.verbose
+            verbose: options.verbose,
+            refreshIndexes: options.refreshIndexes,
         };
 
         try {
@@ -493,6 +430,7 @@ program
     .option('--iterations <count>', 'Number of iterations per test', '3')
     .option('--timeout <seconds>', 'Timeout in seconds', '60')
     .option('--output <path>', 'Output file path for results')
+    .option('--refresh-indexes', 'Refresh cached docs/indexes before eval')
     .option('--verbose', 'Show detailed progress')
     .action(async (options) => {
         const cwd = process.cwd();
@@ -510,7 +448,8 @@ program
             iterations: parseInt(options.iterations),
             timeout: parseInt(options.timeout),
             output: options.output,
-            verbose: options.verbose
+            verbose: options.verbose,
+            refreshIndexes: options.refreshIndexes,
         };
 
         try {
@@ -550,4 +489,3 @@ program
     });
 
 program.parse();
-

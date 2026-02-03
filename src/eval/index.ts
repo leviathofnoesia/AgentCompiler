@@ -12,8 +12,7 @@ import { scanProject } from '../scanner/index.js';
 import { compressIndex } from '../compressor/index.js';
 import type { DetectedSkill } from '../scanner/index.js';
 import { loadConfig } from '../config/index.js';
-import { fetchDocs } from '../fetcher/index.js';
-import { getRegistry } from '../registries/index.js';
+import { compileProject } from '../core/compile.js';
 import { createLLMClient, testLLMConnection } from '../llm/client.js';
 import { type LLMConfig } from '../llm/index.js';
 import { testGeneratedCode } from './utils.js';
@@ -69,6 +68,7 @@ export interface EvalOptions {
     iterations?: number; // Number of iterations per test
     timeout?: number;    // Timeout in seconds
     provider?: string;   // LLM provider
+    refreshIndexes?: boolean; // Refresh cached docs/indexes before eval
 }
 
 /**
@@ -231,12 +231,27 @@ export async function runEval(options: EvalOptions = {}): Promise<EvalResult> {
     const iterations = options.iterations || 3;
     const timeout = options.timeout || 60;
     const provider = options.provider || 'openai';
+    const refreshIndexes = options.refreshIndexes || false;
+    const cwd = process.cwd();
 
     console.log(chalk.blue(`\nRunning ${framework} evaluation...`));
     console.log(chalk.gray(`Config: ${config}`));
     console.log(chalk.gray(`Model: ${model}`));
     console.log(chalk.gray(`Iterations: ${iterations}`));
     console.log(chalk.gray(`Timeout: ${timeout}s`));
+
+    if (config === 'agents-md' && refreshIndexes) {
+        const configData = await loadConfig(cwd);
+        await compileProject({
+            cwd,
+            outPath: configData.out || './AGENTS.md',
+            only: framework ? [framework] : undefined,
+            refresh: true,
+            dryRun: true,
+            includeSkillsSh: false,
+            silent: !verbose,
+        });
+    }
 
     const startTime = Date.now();
     const results: EvalTaskResult[] = [];
