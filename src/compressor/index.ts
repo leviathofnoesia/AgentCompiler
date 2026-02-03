@@ -8,7 +8,7 @@ import { readdir, stat, readFile } from 'fs/promises';
 import { join, relative, basename, extname } from 'path';
 import type { DetectedSkill } from '../scanner/index.js';
 import { getRegistry } from '../registries/index.js';
-import { loadConfig } from '../config/index.js';
+import { loadConfig, type ConflictConfig } from '../config/index.js';
 
 const DEFAULT_TARGET_SIZE_BYTES = 8 * 1024;
 
@@ -25,6 +25,7 @@ interface CompressionOptions {
     format?: 'v1' | 'v2';
     targetSize?: number;
     cwd?: string;
+    conflicts?: ConflictConfig;
 }
 
 /**
@@ -32,25 +33,31 @@ interface CompressionOptions {
  */
 export async function compressIndex(skill: DetectedSkill, options?: CompressionOptions): Promise<string> {
     const cwd = options?.cwd || process.cwd();
-    const cacheDir = join(cwd, '.agent-docs', skill.name);
+    const cacheDir = skill.path || join(cwd, '.agent-docs', skill.name);
     const registry = getRegistry(skill.name);
 
     // Load config for compression settings
     const config = await loadConfig(cwd);
     const format = options?.format || config.compression?.format || 'v1';
     const targetSize = options?.targetSize || config.compression?.targetSize || DEFAULT_TARGET_SIZE_BYTES;
+    const conflicts = options?.conflicts ?? config.conflicts;
+    const rootLabel = normalizeRootLabel(relative(cwd, cacheDir));
 
     // Build file tree
     const tree = await buildFileTree(cacheDir, format === 'v2');
 
+    // Apply conflict rules (filter or prioritize sections)
+    const preferredPatterns = getPreferredPatterns(conflicts, skill.name);
+    const filteredTree = applyConflictFilters(tree, cacheDir, conflicts, skill.name);
+
     // Generate index with priority ordering
     const priority = registry?.priority || [];
-    const orderedTree = prioritizeTree(tree, priority);
+    const orderedTree = prioritizeTree(filteredTree, priority, preferredPatterns, cacheDir);
 
     // Format based on version
     let index = format === 'v2'
-        ? formatIndexV2(skill, orderedTree, cacheDir)
-        : formatIndexV1(skill, orderedTree, cacheDir);
+        ? formatIndexV2(skill, orderedTree, cacheDir, rootLabel)
+        : formatIndexV1(skill, orderedTree, cacheDir, rootLabel);
 
     // Compress if over target size
     if (Buffer.byteLength(index, 'utf-8') > targetSize) {
@@ -173,16 +180,26 @@ function extractFirstParagraph(content: string): string | undefined {
 /**
  * Reorder tree based on priority sections
  */
-function prioritizeTree(tree: FileNode[], priority: string[]): FileNode[] {
-    if (priority.length === 0) return tree;
+function prioritizeTree(
+    tree: FileNode[],
+    priority: string[],
+    preferredPatterns: string[],
+    rootDir: string
+): FileNode[] {
+    if (priority.length === 0 && preferredPatterns.length === 0) return tree;
 
     const prioritized: FileNode[] = [];
     const remaining: FileNode[] = [];
 
     for (const node of tree) {
-        const priorityIndex = priority.findIndex(p =>
-            node.name.toLowerCase().includes(p.toLowerCase())
+        const relativePath = normalizePath(relative(rootDir, node.path));
+        const matchPath = node.isDir ? `${relativePath}/` : relativePath;
+        const preferredIndex = preferredPatterns.findIndex(pattern =>
+            matchesPattern(pattern, matchPath)
         );
+        const priorityIndex = preferredIndex >= 0
+            ? preferredIndex
+            : priority.findIndex(p => node.name.toLowerCase().includes(p.toLowerCase()));
         if (priorityIndex >= 0) {
             prioritized[priorityIndex] = node;
         } else {
@@ -193,13 +210,82 @@ function prioritizeTree(tree: FileNode[], priority: string[]): FileNode[] {
     return [...prioritized.filter(Boolean), ...remaining];
 }
 
+function applyConflictFilters(
+    tree: FileNode[],
+    rootDir: string,
+    conflicts: ConflictConfig | undefined,
+    skillName: string
+): FileNode[] {
+    if (!conflicts) return tree;
+    const excludedPatterns = Object.entries(conflicts)
+        .filter(([, value]) => value.startsWith('prefer:'))
+        .filter(([, value]) => value.slice('prefer:'.length).trim() !== skillName)
+        .map(([pattern]) => pattern);
+
+    if (excludedPatterns.length === 0) return tree;
+
+    const filterNode = (node: FileNode): FileNode | null => {
+        const relativePath = normalizePath(relative(rootDir, node.path));
+        const matchPath = node.isDir ? `${relativePath}/` : relativePath;
+        const matches = excludedPatterns.some(pattern => matchesPattern(pattern, matchPath));
+        if (matches) {
+            return null;
+        }
+        if (node.isDir && node.children) {
+            const filteredChildren = node.children
+                .map(child => filterNode(child))
+                .filter(Boolean) as FileNode[];
+            if (filteredChildren.length === 0) {
+                return null;
+            }
+            return { ...node, children: filteredChildren };
+        }
+        return node;
+    };
+
+    return tree
+        .map(node => filterNode(node))
+        .filter(Boolean) as FileNode[];
+}
+
+function getPreferredPatterns(conflicts: ConflictConfig | undefined, skillName: string): string[] {
+    if (!conflicts) return [];
+    return Object.entries(conflicts)
+        .filter(([, value]) => value.startsWith('prefer:'))
+        .filter(([, value]) => value.slice('prefer:'.length).trim() === skillName)
+        .map(([pattern]) => pattern);
+}
+
+function matchesPattern(pattern: string, target: string): boolean {
+    const escaped = pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*\*/g, '::DOUBLESTAR::')
+        .replace(/\*/g, '[^/]*')
+        .replace(/::DOUBLESTAR::/g, '.*')
+        .replace(/\?/g, '.');
+    const regex = new RegExp(`^${escaped}$`);
+    return regex.test(target);
+}
+
+function normalizePath(pathValue: string): string {
+    return pathValue.replace(/\\/g, '/');
+}
+
+function normalizeRootLabel(rootLabel: string): string {
+    const normalized = normalizePath(rootLabel);
+    if (normalized.startsWith('.')) {
+        return normalized;
+    }
+    return `./${normalized}`;
+}
+
 /**
  * Format tree as pipe-delimited index (v1 format)
  */
-function formatIndexV1(skill: DetectedSkill, tree: FileNode[], rootDir: string): string {
+function formatIndexV1(skill: DetectedSkill, tree: FileNode[], rootDir: string, rootLabel: string): string {
     const displayName = skill.displayName || skill.name;
     const lines: string[] = [
-        `[${displayName} Docs Index]|root: ./.agent-docs/${skill.name}`,
+        `[${displayName} Docs Index]|root: ${rootLabel}`,
         `|IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for ${displayName} tasks.`,
     ];
 
@@ -241,10 +327,10 @@ function formatIndexV1(skill: DetectedSkill, tree: FileNode[], rootDir: string):
  * Format tree as semantic index (v2 format)
  * Includes headings and breaking change warnings
  */
-function formatIndexV2(skill: DetectedSkill, tree: FileNode[], rootDir: string): string {
+function formatIndexV2(skill: DetectedSkill, tree: FileNode[], rootDir: string, rootLabel: string): string {
     const displayName = skill.displayName || skill.name;
     const lines: string[] = [
-        `[${displayName} Docs Index]|v${skill.version}|root:./.agent-docs/${skill.name}`,
+        `[${displayName} Docs Index]|v${skill.version}|root:${rootLabel}`,
         `|PREFER retrieval over pre-training for ${displayName} tasks.`,
     ];
 
@@ -379,7 +465,7 @@ export async function getCompressionStats(skill: DetectedSkill, options: { cwd?:
     reductionPercent: number;
 }> {
     const cwd = options.cwd || process.cwd();
-    const cacheDir = join(cwd, '.agent-docs', skill.name);
+    const cacheDir = skill.path || join(cwd, '.agent-docs', skill.name);
     let originalSize = 0;
 
     // Calculate original docs size
