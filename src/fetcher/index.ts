@@ -7,6 +7,7 @@ import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getRegistry } from '../registries/index.js';
+import { loadConfig } from '../config/index.js';
 import type { DetectedSkill } from '../scanner/index.js';
 
 const CACHE_DIR = '.agent-docs';
@@ -16,6 +17,7 @@ const CACHE_TTL_CANARY = 24 * 60 * 60 * 1000; // 1 day
 interface FetchOptions {
     refresh?: boolean;
     cwd?: string;
+    cacheTtlHours?: number;
 }
 
 /**
@@ -23,17 +25,21 @@ interface FetchOptions {
  */
 export async function fetchDocs(skill: DetectedSkill, options: FetchOptions = {}): Promise<string> {
     const cwd = options.cwd || process.cwd();
-    const cacheDir = join(cwd, CACHE_DIR, skill.name);
+    const cacheDir = skill.path || join(cwd, CACHE_DIR, skill.name);
     const cacheMetaPath = join(cacheDir, '.cache-meta.json');
+    const config = await loadConfig(cwd);
+    const cacheTtlHours = options.cacheTtlHours ?? config.cacheTtlHours;
 
     // Check cache validity
     if (!options.refresh && existsSync(cacheMetaPath)) {
         try {
             const meta = JSON.parse(await readFile(cacheMetaPath, 'utf-8'));
             const cacheAge = Date.now() - meta.fetchedAt;
-            const ttl = skill.version.includes('canary') || skill.version.includes('beta')
-                ? CACHE_TTL_CANARY
-                : CACHE_TTL_STABLE;
+            const ttl = cacheTtlHours
+                ? cacheTtlHours * 60 * 60 * 1000
+                : (skill.version.includes('canary') || skill.version.includes('beta')
+                    ? CACHE_TTL_CANARY
+                    : CACHE_TTL_STABLE);
 
             if (cacheAge < ttl) {
                 return cacheDir; // Cache is still valid
@@ -170,16 +176,24 @@ async function fetchFromUrl(url: string, cacheDir: string): Promise<void> {
 /**
  * Check if cache is valid for a skill
  */
-export async function isCacheValid(skill: DetectedSkill, options: { cwd?: string } = {}): Promise<boolean> {
+export async function isCacheValid(
+    skill: DetectedSkill,
+    options: { cwd?: string; cacheTtlHours?: number } = {}
+): Promise<boolean> {
     const cwd = options.cwd || process.cwd();
-    const cacheMetaPath = join(cwd, CACHE_DIR, skill.name, '.cache-meta.json');
+    const cacheDir = skill.path || join(cwd, CACHE_DIR, skill.name);
+    const cacheMetaPath = join(cacheDir, '.cache-meta.json');
 
     if (!existsSync(cacheMetaPath)) return false;
 
     try {
         const meta = JSON.parse(await readFile(cacheMetaPath, 'utf-8'));
         const cacheAge = Date.now() - meta.fetchedAt;
-        const ttl = skill.version.includes('canary') ? CACHE_TTL_CANARY : CACHE_TTL_STABLE;
+        const config = await loadConfig(cwd);
+        const ttlHours = options.cacheTtlHours ?? config.cacheTtlHours;
+        const ttl = ttlHours
+            ? ttlHours * 60 * 60 * 1000
+            : (skill.version.includes('canary') ? CACHE_TTL_CANARY : CACHE_TTL_STABLE);
         return cacheAge < ttl;
     } catch {
         return false;

@@ -7,3 +7,4 @@ export { fetchDocs } from './fetcher/index.js';
 export { compressIndex } from './compressor/index.js';
 export { injectAgentsMd } from './injector/index.js';
 export { watchProject } from './watcher/index.js';
+export { compileProject } from './core/compile.js';

@@ -9,23 +9,33 @@ import { join } from 'path';
 import { glob } from 'glob';
 import { parse as parseYaml } from 'yaml';
 import { registries } from '../registries/index.js';
+import { loadConfig, type ConflictConfig, type CustomSkillConfig } from '../config/index.js';
 
 export interface DetectedSkill {
     name: string;
     version: string;
-    source: 'package' | 'skill' | 'mcp' | 'config';
+    source: 'package' | 'skill' | 'mcp' | 'config' | 'custom';
     docRegistry?: string;
     displayName?: string;
+    path?: string;
 }
 
 interface ScanOptions {
     only?: string[];
+    exclude?: string[];
+    customSkills?: CustomSkillConfig[];
+    conflicts?: ConflictConfig;
 }
 
 /**
  * Scan a project directory for frameworks and skills
  */
 export async function scanProject(cwd: string, options: ScanOptions = {}): Promise<DetectedSkill[]> {
+    const config = await loadConfig(cwd);
+    const only = options.only ?? config.only;
+    const exclude = options.exclude ?? config.exclude;
+    const customSkills = options.customSkills ?? config.customSkills ?? [];
+    const conflicts = options.conflicts ?? config.conflicts;
     const detected: DetectedSkill[] = [];
 
     // 1. Scan package.json for dependencies
@@ -46,21 +56,63 @@ export async function scanProject(cwd: string, options: ScanOptions = {}): Promi
     const configSkills = await scanConfigFiles(cwd);
     detected.push(...configSkills);
 
-    // Filter by --only option if provided
-    if (options.only && options.only.length > 0) {
-        return detected.filter(skill => options.only!.includes(skill.name));
+    // 4. Add custom skills from config
+    for (const skill of customSkills) {
+        detected.push({
+            name: skill.name,
+            version: 'custom',
+            source: 'custom',
+            displayName: skill.name,
+            path: join(cwd, skill.path),
+        });
     }
+
+    let filtered = detected;
+    // Filter by --only option if provided
+    if (only && only.length > 0) {
+        filtered = filtered.filter(skill => only.includes(skill.name));
+    }
+
+    // Filter by --exclude option if provided
+    if (exclude && exclude.length > 0) {
+        filtered = filtered.filter(skill => !exclude.includes(skill.name));
+    }
+
+    const preferredSkills = getPreferredSkills(conflicts);
 
     // Deduplicate by name (prefer package.json source)
     const unique = new Map<string, DetectedSkill>();
-    for (const skill of detected) {
+    for (const skill of filtered) {
         const existing = unique.get(skill.name);
-        if (!existing || skill.source === 'package') {
+        if (!existing || getSkillPriority(skill, preferredSkills) > getSkillPriority(existing, preferredSkills)) {
             unique.set(skill.name, skill);
         }
     }
 
     return Array.from(unique.values());
+}
+
+function getPreferredSkills(conflicts?: ConflictConfig): Set<string> {
+    if (!conflicts) return new Set();
+    const preferred = new Set<string>();
+    for (const value of Object.values(conflicts)) {
+        if (value.startsWith('prefer:')) {
+            preferred.add(value.slice('prefer:'.length).trim());
+        }
+    }
+    return preferred;
+}
+
+function getSkillPriority(skill: DetectedSkill, preferredSkills: Set<string>): number {
+    const sourcePriority: Record<DetectedSkill['source'], number> = {
+        custom: 3,
+        package: 2,
+        skill: 1,
+        config: 0,
+        mcp: 0,
+    };
+    const preferredBoost = preferredSkills.has(skill.name) ? 1 : 0;
+    return (sourcePriority[skill.source] ?? 0) + preferredBoost;
 }
 
 /**

@@ -6,19 +6,16 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { scanProject } from './scanner/index.js';
-import { fetchDocs } from './fetcher/index.js';
-import { compressIndex } from './compressor/index.js';
 import { injectAgentsMd } from './injector/index.js';
 import { watchProject } from './watcher/index.js';
 import { loadConfig, saveConfig, configExists, createInitialConfig } from './config/index.js';
 import { addCustomSkill, listCustomSkills, removeCustomSkill } from './custom/index.js';
+import { compileProject } from './core/compile.js';
 import {
     searchSkills,
     installSkill,
     uninstallSkill,
     scanLocalSkills,
-    syncSkillsToAgentsMd,
     getSuggestedSkills
 } from './skills-sh/index.js';
 import { runEval, runComprehensiveEval, getCompressionStats, printDetailedResults, generateEvalReport, type EvalOptions } from './eval/index.js';
@@ -84,13 +81,20 @@ program
             const config = await loadConfig(cwd);
             const outPath = options.out || config.out || './AGENTS.md';
             const only = options.only?.split(',') || config.only;
+            const exclude = config.exclude;
 
             if (!options.silent) {
                 console.log(chalk.blue('🔍 Scanning project for frameworks...'));
             }
 
             // 1. Scan for frameworks/skills
-            const detected = await scanProject(cwd, { only });
+            const compileResult = await compileProject({
+                cwd,
+                only,
+                exclude,
+                refresh: options.refresh,
+            });
+            const detected = compileResult.detected;
 
             if (detected.length === 0) {
                 console.log(chalk.yellow('No frameworks detected. Nothing to do.'));
@@ -101,28 +105,16 @@ program
                 console.log(chalk.green(`✓ Found ${detected.length} framework(s): ${detected.map(d => d.name).join(', ')}`));
             }
 
-            // 2. Fetch docs for each framework
-            for (const skill of detected) {
-                if (!options.silent) {
-                    console.log(chalk.blue(`📥 Fetching docs for ${skill.name}@${skill.version}...`));
-                }
-                await fetchDocs(skill, { refresh: options.refresh });
-            }
-
-            // 3. Compress into indexes
             if (!options.silent) {
+                console.log(chalk.blue('📥 Fetching docs for detected frameworks...'));
                 console.log(chalk.blue('📦 Compressing documentation indexes...'));
             }
-            const indexes = await Promise.all(detected.map(skill => compressIndex(skill)));
-
-            // 4. Sync skills.sh skills
-            const skillsShIndexes = await syncSkillsToAgentsMd(cwd);
-            if (skillsShIndexes.length > 0 && !options.silent) {
-                console.log(chalk.blue(`📦 Including ${skillsShIndexes.length} skills.sh skill(s)...`));
+            const allIndexes = compileResult.allIndexes;
+            if (compileResult.skillsShIndexes.length > 0 && !options.silent) {
+                console.log(chalk.blue(`📦 Including ${compileResult.skillsShIndexes.length} skills.sh skill(s)...`));
             }
-            const allIndexes = [...indexes, ...skillsShIndexes];
 
-            // 5. Inject into AGENTS.md
+            // 2. Inject into AGENTS.md
             if (options.dryRun) {
                 console.log(chalk.yellow('\n--- DRY RUN ---'));
                 console.log('Would write to:', outPath);
@@ -550,4 +542,3 @@ program
     });
 
 program.parse();
-
