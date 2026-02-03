@@ -3,9 +3,11 @@
  * Downloads version-matched documentation for frameworks
  */
 
-import { mkdir, writeFile, readFile, stat } from 'fs/promises';
+import { mkdir, writeFile, readFile, mkdtemp, rm, readdir, cp } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { tmpdir } from 'os';
+import { spawn } from 'child_process';
 import { getRegistry } from '../registries/index.js';
 import type { DetectedSkill } from '../scanner/index.js';
 
@@ -162,9 +164,65 @@ async function fetchFromGitHub(
  * Fetch docs from a direct URL
  */
 async function fetchFromUrl(url: string, cacheDir: string): Promise<void> {
-    // Simple URL fetch - assumes it's a zip or tar.gz
-    // TODO: Implement URL-based fetching
-    await mkdir(cacheDir, { recursive: true });
+    const pathname = new URL(url).pathname.toLowerCase();
+    const isZip = pathname.endsWith('.zip');
+    const isTarGz = pathname.endsWith('.tar.gz') || pathname.endsWith('.tgz');
+
+    if (!isZip && !isTarGz) {
+        throw new Error(`Unsupported archive format for URL: ${url}`);
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch docs: ${response.status} ${response.statusText}`);
+    }
+
+    const tempDir = await mkdtemp(join(tmpdir(), 'agent-docs-'));
+    const archivePath = join(tempDir, isZip ? 'docs.zip' : 'docs.tar.gz');
+    const extractDir = join(tempDir, 'extracted');
+
+    try {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        await writeFile(archivePath, buffer);
+        await mkdir(extractDir, { recursive: true });
+
+        await runCommand(
+            isZip ? 'unzip' : 'tar',
+            isZip ? ['-q', archivePath, '-d', extractDir] : ['-xzf', archivePath, '-C', extractDir],
+            tempDir
+        );
+
+        await mkdir(cacheDir, { recursive: true });
+
+        const extractedEntries = await readdir(extractDir, { withFileTypes: true });
+        let sourceRoot = extractDir;
+        if (extractedEntries.length === 1 && extractedEntries[0].isDirectory()) {
+            sourceRoot = join(extractDir, extractedEntries[0].name);
+        }
+
+        const entries = await readdir(sourceRoot, { withFileTypes: true });
+        await Promise.all(entries.map(async (entry) => {
+            const src = join(sourceRoot, entry.name);
+            const dest = join(cacheDir, entry.name);
+            await cp(src, dest, { recursive: true, force: true });
+        }));
+    } finally {
+        await rm(tempDir, { recursive: true, force: true });
+    }
+}
+
+function runCommand(command: string, args: string[], cwd: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const child = spawn(command, args, { cwd, stdio: 'ignore' });
+        child.on('error', reject);
+        child.on('close', (code) => {
+            if (code === 0) {
+                resolve();
+            } else {
+                reject(new Error(`Command failed: ${command} ${args.join(' ')}`));
+            }
+        });
+    });
 }
 
 /**
