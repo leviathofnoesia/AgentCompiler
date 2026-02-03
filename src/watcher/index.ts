@@ -23,7 +23,6 @@ export async function watchProject(cwd: string, outPath: string): Promise<void> 
             const compileResult = await compileProject({ cwd });
             if (compileResult.detected.length === 0) {
                 console.log(chalk.yellow('No frameworks detected.'));
-                return;
             }
 
             await injectAgentsMd(outPath, compileResult.allIndexes);

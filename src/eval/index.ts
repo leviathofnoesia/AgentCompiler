@@ -12,6 +12,7 @@ import { scanProject } from '../scanner/index.js';
 import { compressIndex } from '../compressor/index.js';
 import type { DetectedSkill } from '../scanner/index.js';
 import { loadConfig } from '../config/index.js';
+import { compileProject } from '../core/compile.js';
 import { createLLMClient, testLLMConnection } from '../llm/client.js';
 import { type LLMConfig } from '../llm/index.js';
 import { testGeneratedCode } from './utils.js';
@@ -67,6 +68,7 @@ export interface EvalOptions {
     iterations?: number; // Number of iterations per test
     timeout?: number;    // Timeout in seconds
     provider?: string;   // LLM provider
+    refreshIndexes?: boolean; // Refresh cached docs/indexes before eval
 }
 
 /**
@@ -229,6 +231,8 @@ export async function runEval(options: EvalOptions = {}): Promise<EvalResult> {
     const iterations = options.iterations || 3;
     const timeout = options.timeout || 60;
     const provider = options.provider || 'openai';
+    const refreshIndexes = options.refreshIndexes || false;
+    const cwd = process.cwd();
 
     console.log(chalk.blue(`\nRunning ${framework} evaluation...`));
     console.log(chalk.gray(`Config: ${config}`));
@@ -236,12 +240,36 @@ export async function runEval(options: EvalOptions = {}): Promise<EvalResult> {
     console.log(chalk.gray(`Iterations: ${iterations}`));
     console.log(chalk.gray(`Timeout: ${timeout}s`));
 
+    if (config === 'agents-md' && refreshIndexes) {
+        const configData = await loadConfig(cwd);
+        await compileProject({
+            cwd,
+            outPath: configData.out || './AGENTS.md',
+            only: framework ? [framework] : undefined,
+            refresh: true,
+            dryRun: true,
+            includeSkillsSh: false,
+            silent: !verbose,
+        });
+    }
+
     const startTime = Date.now();
     const results: EvalTaskResult[] = [];
     let passed = 0;
     let total = 0;
 
     const tasks = TEST_TASKS[framework as keyof typeof TEST_TASKS] || [];
+    const cwd = process.cwd();
+    const detectedSkill = config === 'agents-md' ? await resolveEvalSkill(framework, cwd) : undefined;
+
+    if (detectedSkill && config === 'agents-md') {
+        try {
+            await fetchDocs(detectedSkill, { cwd });
+        } catch (error) {
+            console.log(chalk.yellow('⚠️  Failed to fetch docs; eval will continue without fresh cache.'));
+            console.log(chalk.dim(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`));
+        }
+    }
 
     // Create LLM config
     const llmConfig: LLMConfig = {
@@ -266,7 +294,7 @@ export async function runEval(options: EvalOptions = {}): Promise<EvalResult> {
             console.log(chalk.gray(`\nTask: ${task.name} (iteration ${i + 1}/${iterations}) - ${task.description}`));
             
             try {
-                const result = await runTask(task, framework, config, llmConfig, simulate, timeout);
+                const result = await runTask(task, framework, config, llmConfig, simulate, timeout, detectedSkill);
                 results.push(result);
                 
                 if (result.passed) {
@@ -299,8 +327,8 @@ export async function runEval(options: EvalOptions = {}): Promise<EvalResult> {
     const duration = endTime - startTime;
 
     // Calculate compression stats
-    const configData = loadConfig(process.cwd());
-    const compressionTarget = 8192; // 8KB target
+    const configData = await loadConfig(cwd);
+    const compressionTarget = configData.compression?.targetSize || 8192; // 8KB target
     const compressionSize = Buffer.byteLength(JSON.stringify(results), 'utf-8');
     const compressionRatio = compressionSize / compressionTarget;
 
@@ -393,7 +421,8 @@ async function runTask(
     config: string,
     llmConfig: LLMConfig,
     simulate: boolean = false,
-    timeout: number = 60
+    timeout: number = 60,
+    detectedSkill?: DetectedSkill
 ): Promise<EvalTaskResult> {
     const taskStartTime = Date.now();
     
@@ -420,9 +449,13 @@ async function runTask(
     const client = await createLLMClient(llmConfig);
 
     // Build the prompt
-    const systemPrompt = config === 'agents-md' 
-        ? `You are an expert developer. Use the following documentation index to help you:\n\n${await compressIndex({ name: framework } as any)}\n\nGenerate only code, no explanations.`
-        : 'You are an expert developer. Generate only code, no explanations.';
+    let systemPrompt = 'You are an expert developer. Generate only code, no explanations.';
+    if (config === 'agents-md') {
+        const skill = detectedSkill || await resolveEvalSkill(framework, process.cwd());
+        await fetchDocs(skill);
+        const index = await compressIndex(skill);
+        systemPrompt = `You are an expert developer. Use the following documentation index to help you:\n\n${index}\n\nGenerate only code, no explanations.`;
+    }
 
     const userPrompt = task.prompt || task.description;
 
@@ -465,6 +498,22 @@ async function runTask(
             duration: Date.now() - taskStartTime
         };
     }
+}
+
+async function resolveEvalSkill(framework: string, cwd: string): Promise<DetectedSkill> {
+    const detected = await scanProject(cwd, { only: [framework] });
+    const match = detected.find(skill => skill.name === framework);
+    if (match) {
+        return match;
+    }
+
+    const registry = getRegistry(framework);
+    return {
+        name: framework,
+        version: 'latest',
+        source: 'config',
+        displayName: registry?.displayName || framework,
+    };
 }
 
 /**

@@ -435,6 +435,7 @@ program
     .option('--iterations <count>', 'Number of iterations per test', '3')
     .option('--timeout <seconds>', 'Timeout in seconds', '60')
     .option('--output <path>', 'Output file path for results')
+    .option('--refresh-indexes', 'Refresh cached docs/indexes before eval')
     .option('--verbose', 'Show detailed progress')
     .action(async (options) => {
         const cwd = process.cwd();
@@ -454,7 +455,8 @@ program
             iterations: parseInt(options.iterations),
             timeout: parseInt(options.timeout),
             output: options.output,
-            verbose: options.verbose
+            verbose: options.verbose,
+            refreshIndexes: options.refreshIndexes,
         };
 
         try {
@@ -485,6 +487,7 @@ program
     .option('--iterations <count>', 'Number of iterations per test', '3')
     .option('--timeout <seconds>', 'Timeout in seconds', '60')
     .option('--output <path>', 'Output file path for results')
+    .option('--refresh-indexes', 'Refresh cached docs/indexes before eval')
     .option('--verbose', 'Show detailed progress')
     .action(async (options) => {
         const cwd = process.cwd();
@@ -502,7 +505,8 @@ program
             iterations: parseInt(options.iterations),
             timeout: parseInt(options.timeout),
             output: options.output,
-            verbose: options.verbose
+            verbose: options.verbose,
+            refreshIndexes: options.refreshIndexes,
         };
 
         try {
