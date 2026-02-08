@@ -4,6 +4,7 @@
 
 [![npm version](https://badge.fury.io/js/skill-compiler.svg)](https://www.npmjs.com/package/skill-compiler)
 [![GitHub](https://img.shields.io/github/license/leviathofnoesia/AgentCompiler)](https://github.com/leviathofnoesia/AgentCompiler)
+[![API](https://img.shields.io/badge/REST_API-Live-blue)](https://github.com/leviathofnoesia/agentcompiler-api)
 
 ## 📖 Background
 
@@ -154,6 +155,32 @@ Outputs Build, Lint, Test, and Pass Rate metrics comparing baseline vs AGENTS.md
 2. **Fetcher** - Downloads version-matched docs from GitHub (cached for 7 days)
 3. **Compressor** - Compresses to <8KB using pipe-delimited format
 4. **Injector** - Merges into AGENTS.md while preserving user content
+
+## REST API
+
+Need an API instead of a CLI? Check out the [AgentCompiler API](https://github.com/leviathofnoesia/agentcompiler-api) - a RESTful API that provides the same functionality via HTTP endpoints, with x402 payment support for autonomous agents.
+
+**Features:**
+- Compile framework docs on demand
+- x402 payments (autonomous agents can pay themselves!)
+- Rate-limited free tier (10 requests/day)
+- Scan endpoints for framework detection
+
+**Quick Start:**
+```bash
+# Register and get API key
+curl -X POST https://api.agentcompiler.com/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My App", "email": "me@example.com"}'
+
+# Compile a project
+curl -X POST https://api.agentcompiler.com/api/v1/compile \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -d '{"packageJson": "{\"dependencies\":{\"next\":\"14.0.0\"}}"}'
+```
+
+Perfect for integrating agent documentation compilation into your workflows!
 
 ## Configuration
 
