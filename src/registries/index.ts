@@ -258,7 +258,6 @@ export const registries: FrameworkRegistry[] = [
         name: 'express',
         displayName: 'Express.js',
         packageMatch: ['express'],
-        configMatch: ['express.config.js'],
         docSource: {
             type: 'github',
             repo: 'expressjs/express',
@@ -312,7 +311,6 @@ export const registries: FrameworkRegistry[] = [
         name: 'solid',
         displayName: 'Solid',
         packageMatch: ['solid-js'],
-        configMatch: ['vite.config.*'],
         docSource: {
             type: 'github',
             repo: 'solidjs/solid-docs',
@@ -325,7 +323,6 @@ export const registries: FrameworkRegistry[] = [
         name: 'qwik',
         displayName: 'Qwik',
         packageMatch: ['@builder.io/qwik'],
-        configMatch: ['vite.config.*'],
         docSource: {
             type: 'github',
             repo: 'BuilderIO/qwik',
@@ -379,7 +376,6 @@ export const registries: FrameworkRegistry[] = [
         name: 'gin',
         displayName: 'Gin',
         packageMatch: ['github.com/gin-gonic/gin'],
-        configMatch: ['go.mod'],
         docSource: {
             type: 'github',
             repo: 'gin-gonic/gin',
@@ -392,7 +388,6 @@ export const registries: FrameworkRegistry[] = [
         name: 'echo',
         displayName: 'Echo',
         packageMatch: ['github.com/labstack/echo/v4'],
-        configMatch: ['go.mod'],
         docSource: {
             type: 'github',
             repo: 'labstack/echo',
@@ -405,7 +400,6 @@ export const registries: FrameworkRegistry[] = [
         name: 'fiber',
         displayName: 'Fiber',
         packageMatch: ['github.com/gofiber/fiber/v2'],
-        configMatch: ['go.mod'],
         docSource: {
             type: 'github',
             repo: 'gofiber/fiber',
@@ -431,8 +425,7 @@ export const registries: FrameworkRegistry[] = [
     {
         name: 'pydantic',
         displayName: 'Pydantic',
-        packageMatch: ['pydantic'],
-        configMatch: ['pydantic_settings'],
+        packageMatch: ['pydantic', 'pydantic-settings'],
         docSource: {
             type: 'github',
             repo: 'pydantic/pydantic',
@@ -446,7 +439,6 @@ export const registries: FrameworkRegistry[] = [
         name: 'chi',
         displayName: 'Chi',
         packageMatch: ['github.com/go-chi/chi/v5'],
-        configMatch: ['go.mod'],
         docSource: {
             type: 'github',
             repo: 'go-chi/chi',

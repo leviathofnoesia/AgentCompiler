@@ -105,6 +105,7 @@ npx skill-compiler eval --framework nextjs --provider mistral --api-key sk-...
 
 ## Supported Frameworks
 
+### JavaScript/TypeScript
 | Framework | Package Match |
 |-----------|--------------|
 | Next.js | `next` |
@@ -119,6 +120,31 @@ npx skill-compiler eval --framework nextjs --provider mistral --api-key sk-...
 | tRPC | `@trpc/server`, `@trpc/client` |
 | Zod | `zod` |
 | TanStack Query | `@tanstack/react-query` |
+| Nuxt | `nuxt` |
+| Remix | `@remix-run/react` |
+| Hono | `hono` |
+| Effect | `effect` |
+| Bun | `bun` |
+| Express.js | `express` |
+| NestJS | `@nestjs/core` |
+| Fastify | `fastify` |
+| Svelte | `svelte` |
+| Solid | `solid-js` |
+| Qwik | `@builder.io/qwik` |
+
+### Python
+| Framework | Package Match |
+|-----------|--------------|
+| Django | `django` |
+| FastAPI | `fastapi` |
+| Flask | `flask` |
+
+### Go
+| Framework | Package Match |
+|-----------|--------------|
+| Gin | `github.com/gin-gonic/gin` |
+| Echo | `github.com/labstack/echo/v4` |
+| Fiber | `github.com/gofiber/fiber/v2` |
 
 ## Generated Output
 

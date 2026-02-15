@@ -289,44 +289,112 @@ function parseRequirementsTxt(content: string): string[] {
 }
 
 /**
- * Parse pyproject.toml content
+ * Parse pyproject.toml content - handles both PEP 621 and Poetry formats
  */
 function parsePyprojectToml(content: string): string[] {
     const packages: string[] = [];
+    const knownKeys = new Set([
+        'package', 'version', 'description', 'authors', 'requires', 'dependencies',
+        'readme', 'license', 'keywords', 'classifiers', 'urls', 'optional-dependencies'
+    ]);
     
-    // Simple regex-based parsing for dependencies
-    // Match both [project.dependencies] and [tool.poetry.dependencies] sections
-    const depSectionRegex = /\[(?:project|tool\.\w+)\.dependencies\]([\s\S]*?)(?=\[|$)/gi;
-    let match;
-    
-    while ((match = depSectionRegex.exec(content)) !== null) {
-        const deps = match[1];
-        const packageRegex = /^[a-zA-Z0-9][-a-zA-Z0-9]*/gm;
-        let pkgMatch;
-        
-        while ((pkgMatch = packageRegex.exec(deps)) !== null) {
-            const pkg = pkgMatch[0].toLowerCase();
-            if (pkg && !['package', 'version', 'description', 'authors', 'requires'].includes(pkg)) {
-                packages.push(pkg);
+    try {
+        // Handle project.dependencies section (PEP 621 - array of strings)
+        // Format: dependencies = ["package1", "package2>=1.0"]
+        const projectDepsMatch = content.match(/\[project\.dependencies\]([\s\S]*?)(?=\n\[|$)/i);
+        if (projectDepsMatch) {
+            const depsSection = projectDepsMatch[1];
+            // Match strings like "package>=1.0" or 'package>=1.0'
+            const stringDeps = depsSection.match(/(?:^|\n)\s*["']([^"']+)["']/g);
+            if (stringDeps) {
+                for (const dep of stringDeps) {
+                    // Extract package name from "package>=1.0" format
+                    const pkgName = dep.replace(/["'\s]/g, '').split(/[=<>!~]/)[0].toLowerCase();
+                    if (pkgName && !packages.includes(pkgName) && !knownKeys.has(pkgName)) {
+                        packages.push(pkgName);
+                    }
+                }
             }
         }
+        
+        // Handle tool.poetry.dependencies section (table format)
+        // Format: package = "^1.0"
+        const poetryDepsMatch = content.match(/\[tool\.poetry\.dependencies\]([\s\S]*?)(?=\n\[|$)/i);
+        if (poetryDepsMatch) {
+            const depsSection = poetryDepsMatch[1];
+            // Match keys on left side of = (package names)
+            const pkgRegex = /^([a-zA-Z0-9][-a-zA-Z0-9_.]*)\s*=/m;
+            let match;
+            while ((match = pkgRegex.exec(depsSection)) !== null) {
+                const pkg = match[1].toLowerCase();
+                if (pkg && !packages.includes(pkg) && !knownKeys.has(pkg)) {
+                    packages.push(pkg);
+                }
+            }
+        }
+        
+        // Handle tool.poetry.group.dev.dependencies
+        const poetryDevDepsMatch = content.match(/\[tool\.poetry\.group\.dev\.dependencies\]([\s\S]*?)(?=\n\[|$)/i);
+        if (poetryDevDepsMatch) {
+            const depsSection = poetryDevDepsMatch[1];
+            const pkgRegex = /^([a-zA-Z0-9][-a-zA-Z0-9_.]*)\s*=/m;
+            let match;
+            while ((match = pkgRegex.exec(depsSection)) !== null) {
+                const pkg = match[1].toLowerCase();
+                if (pkg && !packages.includes(pkg) && !knownKeys.has(pkg)) {
+                    packages.push(pkg);
+                }
+            }
+        }
+        
+    } catch {
+        // Fallback to empty array if parsing fails
     }
     
     return packages;
 }
 
 /**
- * Parse Pipfile content
+ * Parse Pipfile content - tracks TOML sections to only match packages in [packages] and [dev-packages]
  */
 function parsePipfile(content: string): string[] {
     const packages: string[] = [];
+    const lines = content.split('\n');
     
-    // Match packages in [packages] section
-    const packageRegex = /^([a-zA-Z0-9][-a-zA-Z0-9]*)\s*=/gm;
-    let match;
+    let inPackagesSection = false;
+    let inDevPackagesSection = false;
     
-    while ((match = packageRegex.exec(content)) !== null) {
-        packages.push(match[1].toLowerCase());
+    // Regex to match section headers like [packages] or [dev-packages]
+    const sectionHeaderRegex = /^\s*\[([^\]]+)\]\s*$/;
+    // Regex to match package key = value (including quoted values)
+    const packageRegex = /^([a-zA-Z0-9][-a-zA-Z0-9]*)\s*=/;
+    
+    for (const line of lines) {
+        // Check for section header
+        const sectionMatch = line.match(sectionHeaderRegex);
+        if (sectionMatch) {
+            const sectionName = sectionMatch[1].trim().toLowerCase();
+            inPackagesSection = sectionName === 'packages';
+            inDevPackagesSection = sectionName === 'dev-packages';
+            continue;
+        }
+        
+        // Only collect packages when inside [packages] or [dev-packages] sections
+        if (inPackagesSection || inDevPackagesSection) {
+            const packageMatch = line.match(packageRegex);
+            if (packageMatch) {
+                packages.push(packageMatch[1].toLowerCase());
+            }
+        }
+        
+        // If we hit another section (not packages/dev-packages), stop collecting
+        if (sectionHeaderRegex.test(line)) {
+            const sectionName = line.match(sectionHeaderRegex)?.[1].trim().toLowerCase();
+            if (sectionName !== 'packages' && sectionName !== 'dev-packages') {
+                inPackagesSection = false;
+                inDevPackagesSection = false;
+            }
+        }
     }
     
     return packages;
@@ -383,23 +451,47 @@ async function scanGoModules(cwd: string): Promise<DetectedSkill[]> {
 }
 
 /**
- * Parse go.mod content
+ * Parse go.mod content - handles both single-line and block require forms
  */
 function parseGoMod(content: string): string[] {
     const packages: string[] = [];
     const lines = content.split('\n');
     
+    let inRequireBlock = false;
+    
     for (const line of lines) {
         const trimmed = line.trim();
-        // Match require statements
-        if (trimmed.startsWith('require (')) {
+        
+        // Skip empty lines and comments
+        if (!trimmed || trimmed.startsWith('//')) {
             continue;
         }
-        if (trimmed.startsWith(')')) {
+        
+        // Detect start of require block
+        if (trimmed === 'require (') {
+            inRequireBlock = true;
             continue;
         }
-        if (trimmed.startsWith('require ')) {
-            const pkg = trimmed.replace('require ', '').split(' ')[0].trim();
+        
+        // Detect end of require block
+        if (trimmed === ')') {
+            inRequireBlock = false;
+            continue;
+        }
+        
+        // Handle single-line require statements (outside block)
+        if (trimmed.startsWith('require ') && !inRequireBlock) {
+            // Single line: "require github.com/gin-gonic/gin v1.9.1"
+            const pkg = trimmed.replace('require ', '').split(/\s+/)[0].trim();
+            if (pkg) packages.push(pkg);
+            continue;
+        }
+        
+        // Handle require block entries
+        if (inRequireBlock) {
+            // Each line inside require block is a module path (possibly with version)
+            // Format: "github.com/gin-gonic/gin v1.9.1"
+            const pkg = trimmed.split(/\s+/)[0].trim();
             if (pkg) packages.push(pkg);
         }
     }
