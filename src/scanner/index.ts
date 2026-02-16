@@ -38,12 +38,20 @@ export async function scanProject(cwd: string, options: ScanOptions = {}): Promi
     const conflicts = options.conflicts ?? config.conflicts;
     const detected: DetectedSkill[] = [];
 
-    // 1. Scan package.json for dependencies
+    // 1. Scan package.json for dependencies (JavaScript/TypeScript)
     const packageJsonPath = join(cwd, 'package.json');
     if (existsSync(packageJsonPath)) {
         const packageSkills = await scanPackageJson(packageJsonPath);
         detected.push(...packageSkills);
     }
+
+    // 1b. Scan Python package files
+    const pythonSkills = await scanPythonPackages(cwd);
+    detected.push(...pythonSkills);
+
+    // 1c. Scan Go module files
+    const goSkills = await scanGoModules(cwd);
+    detected.push(...goSkills);
 
     // 2. Scan .agent/skills/ for skill definitions
     const skillsDir = join(cwd, '.agent', 'skills');
@@ -210,4 +218,310 @@ async function scanConfigFiles(cwd: string): Promise<DetectedSkill[]> {
     }
 
     return detected;
+}
+
+/**
+ * Scan Python package files for framework detection
+ * Supports: requirements.txt, pyproject.toml, Pipfile
+ */
+async function scanPythonPackages(cwd: string): Promise<DetectedSkill[]> {
+    const detected: DetectedSkill[] = [];
+
+    // Check for requirements.txt
+    const requirementsPath = join(cwd, 'requirements.txt');
+    if (existsSync(requirementsPath)) {
+        try {
+            const content = await readFile(requirementsPath, 'utf-8');
+            const packages = parseRequirementsTxt(content);
+            detectPythonFrameworks(packages, detected);
+        } catch {
+            // Ignore parse errors
+        }
+    }
+
+    // Check for pyproject.toml
+    const pyprojectPath = join(cwd, 'pyproject.toml');
+    if (existsSync(pyprojectPath)) {
+        try {
+            const content = await readFile(pyprojectPath, 'utf-8');
+            const packages = parsePyprojectToml(content);
+            detectPythonFrameworks(packages, detected);
+        } catch {
+            // Ignore parse errors
+        }
+    }
+
+    // Check for Pipfile
+    const pipfilePath = join(cwd, 'Pipfile');
+    if (existsSync(pipfilePath)) {
+        try {
+            const content = await readFile(pipfilePath, 'utf-8');
+            const packages = parsePipfile(content);
+            detectPythonFrameworks(packages, detected);
+        } catch {
+            // Ignore parse errors
+        }
+    }
+
+    return detected;
+}
+
+/**
+ * Parse requirements.txt content
+ */
+function parseRequirementsTxt(content: string): string[] {
+    const packages: string[] = [];
+    const lines = content.split('\n');
+    
+    for (const line of lines) {
+        const trimmed = line.trim();
+        // Skip comments and empty lines
+        if (trimmed && !trimmed.startsWith('#')) {
+            // Extract package name (before ==, >=, <=, etc.)
+            const packageName = trimmed.split(/[==><!~]/)[0].trim().toLowerCase();
+            if (packageName) {
+                packages.push(packageName);
+            }
+        }
+    }
+    
+    return packages;
+}
+
+/**
+ * Parse pyproject.toml content - handles both PEP 621 and Poetry formats
+ */
+function parsePyprojectToml(content: string): string[] {
+    const packages: string[] = [];
+    const knownKeys = new Set([
+        'package', 'version', 'description', 'authors', 'requires', 'dependencies',
+        'readme', 'license', 'keywords', 'classifiers', 'urls', 'optional-dependencies'
+    ]);
+    
+    try {
+        // Handle project.dependencies section (PEP 621 - array of strings)
+        // Format: dependencies = ["package1", "package2>=1.0"]
+        const projectDepsMatch = content.match(/\[project\.dependencies\]([\s\S]*?)(?=\n\[|$)/i);
+        if (projectDepsMatch) {
+            const depsSection = projectDepsMatch[1];
+            // Match strings like "package>=1.0" or 'package>=1.0'
+            const stringDeps = depsSection.match(/(?:^|\n)\s*["']([^"']+)["']/g);
+            if (stringDeps) {
+                for (const dep of stringDeps) {
+                    // Extract package name from "package>=1.0" format
+                    const pkgName = dep.replace(/["'\s]/g, '').split(/[=<>!~]/)[0].toLowerCase();
+                    if (pkgName && !packages.includes(pkgName) && !knownKeys.has(pkgName)) {
+                        packages.push(pkgName);
+                    }
+                }
+            }
+        }
+        
+        // Handle tool.poetry.dependencies section (table format)
+        // Format: package = "^1.0"
+        const poetryDepsMatch = content.match(/\[tool\.poetry\.dependencies\]([\s\S]*?)(?=\n\[|$)/i);
+        if (poetryDepsMatch) {
+            const depsSection = poetryDepsMatch[1];
+            // Match keys on left side of = (package names)
+            const pkgRegex = /^([a-zA-Z0-9][-a-zA-Z0-9_.]*)\s*=/m;
+            let match;
+            while ((match = pkgRegex.exec(depsSection)) !== null) {
+                const pkg = match[1].toLowerCase();
+                if (pkg && !packages.includes(pkg) && !knownKeys.has(pkg)) {
+                    packages.push(pkg);
+                }
+            }
+        }
+        
+        // Handle tool.poetry.group.dev.dependencies
+        const poetryDevDepsMatch = content.match(/\[tool\.poetry\.group\.dev\.dependencies\]([\s\S]*?)(?=\n\[|$)/i);
+        if (poetryDevDepsMatch) {
+            const depsSection = poetryDevDepsMatch[1];
+            const pkgRegex = /^([a-zA-Z0-9][-a-zA-Z0-9_.]*)\s*=/m;
+            let match;
+            while ((match = pkgRegex.exec(depsSection)) !== null) {
+                const pkg = match[1].toLowerCase();
+                if (pkg && !packages.includes(pkg) && !knownKeys.has(pkg)) {
+                    packages.push(pkg);
+                }
+            }
+        }
+        
+    } catch {
+        // Fallback to empty array if parsing fails
+    }
+    
+    return packages;
+}
+
+/**
+ * Parse Pipfile content - tracks TOML sections to only match packages in [packages] and [dev-packages]
+ */
+function parsePipfile(content: string): string[] {
+    const packages: string[] = [];
+    const lines = content.split('\n');
+    
+    let inPackagesSection = false;
+    let inDevPackagesSection = false;
+    
+    // Regex to match section headers like [packages] or [dev-packages]
+    const sectionHeaderRegex = /^\s*\[([^\]]+)\]\s*$/;
+    // Regex to match package key = value (including quoted values)
+    const packageRegex = /^([a-zA-Z0-9][-a-zA-Z0-9]*)\s*=/;
+    
+    for (const line of lines) {
+        // Check for section header
+        const sectionMatch = line.match(sectionHeaderRegex);
+        if (sectionMatch) {
+            const sectionName = sectionMatch[1].trim().toLowerCase();
+            inPackagesSection = sectionName === 'packages';
+            inDevPackagesSection = sectionName === 'dev-packages';
+            continue;
+        }
+        
+        // Only collect packages when inside [packages] or [dev-packages] sections
+        if (inPackagesSection || inDevPackagesSection) {
+            const packageMatch = line.match(packageRegex);
+            if (packageMatch) {
+                packages.push(packageMatch[1].toLowerCase());
+            }
+        }
+        
+        // If we hit another section (not packages/dev-packages), stop collecting
+        if (sectionHeaderRegex.test(line)) {
+            const sectionName = line.match(sectionHeaderRegex)?.[1].trim().toLowerCase();
+            if (sectionName !== 'packages' && sectionName !== 'dev-packages') {
+                inPackagesSection = false;
+                inDevPackagesSection = false;
+            }
+        }
+    }
+    
+    return packages;
+}
+
+/**
+ * Detect Python frameworks from package list
+ */
+function detectPythonFrameworks(packages: string[], detected: DetectedSkill[]): void {
+    const packageToRegistry: Record<string, string> = {
+        'django': 'django',
+        'fastapi': 'fastapi',
+        'flask': 'flask',
+        'sqlalchemy': 'sqlalchemy',
+        'pydantic': 'pydantic',
+    };
+
+    for (const pkg of packages) {
+        const registryName = packageToRegistry[pkg];
+        if (registryName) {
+            const registry = registries.find(r => r.name === registryName);
+            if (registry) {
+                detected.push({
+                    name: registry.name,
+                    version: 'latest',
+                    source: 'package',
+                    displayName: registry.displayName,
+                });
+            }
+        }
+    }
+}
+
+/**
+ * Scan Go module files for framework detection
+ */
+async function scanGoModules(cwd: string): Promise<DetectedSkill[]> {
+    const detected: DetectedSkill[] = [];
+
+    const goModPath = join(cwd, 'go.mod');
+    if (!existsSync(goModPath)) {
+        return detected;
+    }
+
+    try {
+        const content = await readFile(goModPath, 'utf-8');
+        const packages = parseGoMod(content);
+        detectGoFrameworks(packages, detected);
+    } catch {
+        // Ignore parse errors
+    }
+
+    return detected;
+}
+
+/**
+ * Parse go.mod content - handles both single-line and block require forms
+ */
+function parseGoMod(content: string): string[] {
+    const packages: string[] = [];
+    const lines = content.split('\n');
+    
+    let inRequireBlock = false;
+    
+    for (const line of lines) {
+        const trimmed = line.trim();
+        
+        // Skip empty lines and comments
+        if (!trimmed || trimmed.startsWith('//')) {
+            continue;
+        }
+        
+        // Detect start of require block
+        if (trimmed === 'require (') {
+            inRequireBlock = true;
+            continue;
+        }
+        
+        // Detect end of require block
+        if (trimmed === ')') {
+            inRequireBlock = false;
+            continue;
+        }
+        
+        // Handle single-line require statements (outside block)
+        if (trimmed.startsWith('require ') && !inRequireBlock) {
+            // Single line: "require github.com/gin-gonic/gin v1.9.1"
+            const pkg = trimmed.replace('require ', '').split(/\s+/)[0].trim();
+            if (pkg) packages.push(pkg);
+            continue;
+        }
+        
+        // Handle require block entries
+        if (inRequireBlock) {
+            // Each line inside require block is a module path (possibly with version)
+            // Format: "github.com/gin-gonic/gin v1.9.1"
+            const pkg = trimmed.split(/\s+/)[0].trim();
+            if (pkg) packages.push(pkg);
+        }
+    }
+    
+    return packages;
+}
+
+/**
+ * Detect Go frameworks from package list
+ */
+function detectGoFrameworks(packages: string[], detected: DetectedSkill[]): void {
+    const packageToRegistry: Record<string, string> = {
+        'github.com/gin-gonic/gin': 'gin',
+        'github.com/labstack/echo/v4': 'echo',
+        'github.com/gofiber/fiber/v2': 'fiber',
+        'github.com/go-chi/chi/v5': 'chi',
+    };
+
+    for (const pkg of packages) {
+        const registryName = packageToRegistry[pkg];
+        if (registryName) {
+            const registry = registries.find(r => r.name === registryName);
+            if (registry) {
+                detected.push({
+                    name: registry.name,
+                    version: 'latest',
+                    source: 'package',
+                    displayName: registry.displayName,
+                });
+            }
+        }
+    }
 }
