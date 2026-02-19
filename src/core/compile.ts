@@ -4,10 +4,8 @@
  */
 
 import { loadConfig, type SkillCompilerConfig } from '../config/index.js';
-import { scanProject, type DetectedSkill } from '../scanner/index.js';
-import { fetchDocs } from '../fetcher/index.js';
-import { compressIndex } from '../compressor/index.js';
-import { syncSkillsToAgentsMd } from '../skills-sh/index.js';
+import { type DetectedSkill } from '../scanner/index.js';
+import { compileKnowledge } from '../universal/compile.js';
 
 export interface CompileOptions {
     cwd?: string;
@@ -21,47 +19,31 @@ export interface CompileResult {
     config: SkillCompilerConfig;
     detected: DetectedSkill[];
     indexes: string[];
+    knowledgeBaseIndexes: string[];
     skillsShIndexes: string[];
     allIndexes: string[];
+    dropped?: number;
 }
 
 export async function compileProject(options: CompileOptions = {}): Promise<CompileResult> {
     const cwd = options.cwd || process.cwd();
     const config = await loadConfig(cwd);
-    const only = options.only ?? config.only;
-    const exclude = options.exclude ?? config.exclude;
-
-    const detected = await scanProject(cwd, {
-        only,
-        exclude,
-        customSkills: config.customSkills,
-        conflicts: config.conflicts,
+    const compiled = await compileKnowledge({
+        cwd,
+        config,
+        only: options.only ?? config.only,
+        exclude: options.exclude ?? config.exclude,
+        refresh: options.refresh,
+        includeSkillsSh: options.includeSkillsSh,
     });
 
-    for (const skill of detected) {
-        await fetchDocs(skill, {
-            refresh: options.refresh,
-            cwd,
-            cacheTtlHours: config.cacheTtlHours,
-        });
-    }
-
-    const indexes = await Promise.all(detected.map(skill => compressIndex(skill, {
-        cwd,
-        format: config.compression?.format,
-        targetSize: config.compression?.targetSize,
-        conflicts: config.conflicts,
-    })));
-
-    const skillsShIndexes = options.includeSkillsSh === false
-        ? []
-        : await syncSkillsToAgentsMd(cwd);
-
     return {
-        config,
-        detected,
-        indexes,
-        skillsShIndexes,
-        allIndexes: [...indexes, ...skillsShIndexes],
+        config: compiled.config,
+        detected: compiled.detected,
+        indexes: compiled.indexes,
+        knowledgeBaseIndexes: compiled.knowledgeBaseIndexes,
+        skillsShIndexes: compiled.skillsShIndexes,
+        allIndexes: compiled.allIndexes,
+        dropped: compiled.dropped,
     };
 }

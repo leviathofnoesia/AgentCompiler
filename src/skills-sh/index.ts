@@ -26,30 +26,36 @@ export interface SearchResult {
     description?: string;
 }
 
+const CURATED_SKILLS: SearchResult[] = [
+    { name: 'vercel-react-best-practices', repo: 'vercel-labs/agent-skills', downloads: 86600, description: 'React best practices from Vercel' },
+    { name: 'web-design-guidelines', repo: 'vercel-labs/agent-skills', downloads: 45000, description: 'Modern web design guidelines' },
+    { name: 'frontend-design', repo: 'vercel-labs/agent-skills', downloads: 38000, description: 'Frontend design patterns' },
+    { name: 'supabase-postgres-best-practices', repo: 'vercel-labs/agent-skills', downloads: 25000, description: 'Supabase and PostgreSQL best practices' },
+    { name: 'next-best-practices', repo: 'vercel-labs/agent-skills', downloads: 20000, description: 'Next.js best practices' },
+    { name: 'vue-best-practices', repo: 'vercel-labs/agent-skills', downloads: 18000, description: 'Vue.js best practices' },
+    { name: 'react-native-best-practices', repo: 'vercel-labs/agent-skills', downloads: 15000, description: 'React Native best practices' },
+    { name: 'tailwind-design-system', repo: 'skills-sh/skills', downloads: 12000, description: 'Tailwind CSS design system patterns' },
+    { name: 'typescript-advanced-types', repo: 'skills-sh/skills', downloads: 10000, description: 'Advanced TypeScript type patterns' },
+    { name: 'test-driven-development', repo: 'vercel-labs/agent-skills', downloads: 9000, description: 'TDD methodology for agents' },
+];
+
 /**
  * Search skills.sh registry
  */
 export async function searchSkills(query: string): Promise<SearchResult[]> {
-    // For now, we'll use a curated list of popular skills
-    // In a full implementation, this would query skills.sh API or scrape the site
-    const popularSkills: SearchResult[] = [
-        { name: 'vercel-react-best-practices', repo: 'vercel-labs/agent-skills', downloads: 86600, description: 'React best practices from Vercel' },
-        { name: 'web-design-guidelines', repo: 'vercel-labs/agent-skills', downloads: 45000, description: 'Modern web design guidelines' },
-        { name: 'frontend-design', repo: 'vercel-labs/agent-skills', downloads: 38000, description: 'Frontend design patterns' },
-        { name: 'supabase-postgres-best-practices', repo: 'vercel-labs/agent-skills', downloads: 25000, description: 'Supabase and PostgreSQL best practices' },
-        { name: 'next-best-practices', repo: 'vercel-labs/agent-skills', downloads: 20000, description: 'Next.js best practices' },
-        { name: 'vue-best-practices', repo: 'vercel-labs/agent-skills', downloads: 18000, description: 'Vue.js best practices' },
-        { name: 'react-native-best-practices', repo: 'vercel-labs/agent-skills', downloads: 15000, description: 'React Native best practices' },
-        { name: 'tailwind-design-system', repo: 'skills-sh/skills', downloads: 12000, description: 'Tailwind CSS design system patterns' },
-        { name: 'typescript-advanced-types', repo: 'skills-sh/skills', downloads: 10000, description: 'Advanced TypeScript type patterns' },
-        { name: 'test-driven-development', repo: 'vercel-labs/agent-skills', downloads: 9000, description: 'TDD methodology for agents' },
-    ];
+    const trimmedQuery = query.trim();
+    const curatedMatches = filterCuratedSkills(trimmedQuery);
 
-    const lowerQuery = query.toLowerCase();
-    return popularSkills.filter(skill =>
-        skill.name.toLowerCase().includes(lowerQuery) ||
-        skill.description?.toLowerCase().includes(lowerQuery)
-    );
+    if (!trimmedQuery || process.env.NODE_ENV === 'test') {
+        return curatedMatches;
+    }
+
+    const registryMatches = await searchSkillsRegistry(trimmedQuery);
+    if (registryMatches.length === 0) {
+        return curatedMatches;
+    }
+
+    return mergeSearchResults(curatedMatches, registryMatches);
 }
 
 /**
@@ -296,7 +302,12 @@ function extractSkillSections(content: string): string[] {
 /**
  * Run npx command and return result
  */
-function runNpxCommand(args: string[]): Promise<{ success: boolean; output: string }> {
+function runNpxCommand(
+    args: string[],
+    options: { timeoutMs?: number } = {}
+): Promise<{ success: boolean; output: string }> {
+    const timeoutMs = options.timeoutMs ?? 60000;
+
     return new Promise((resolve) => {
         const child = spawn('npx', ['-y', ...args], {
             shell: true,
@@ -304,6 +315,13 @@ function runNpxCommand(args: string[]): Promise<{ success: boolean; output: stri
         });
 
         let output = '';
+        let settled = false;
+
+        const finalize = (result: { success: boolean; output: string }) => {
+            if (settled) return;
+            settled = true;
+            resolve(result);
+        };
 
         child.stdout?.on('data', (data) => {
             output += data.toString();
@@ -314,19 +332,115 @@ function runNpxCommand(args: string[]): Promise<{ success: boolean; output: stri
         });
 
         child.on('close', (code) => {
-            resolve({ success: code === 0, output });
+            finalize({ success: code === 0, output });
         });
 
         child.on('error', (error) => {
-            resolve({ success: false, output: error.message });
+            finalize({ success: false, output: error.message });
         });
 
-        // Timeout after 60 seconds
+        // Timeout after a bounded wait to avoid hanging CLI commands
         setTimeout(() => {
             child.kill();
-            resolve({ success: false, output: 'Timeout' });
-        }, 60000);
+            finalize({ success: false, output: output || 'Timeout' });
+        }, timeoutMs);
     });
+}
+
+async function searchSkillsRegistry(query: string): Promise<SearchResult[]> {
+    const result = await runNpxCommand(['skills', 'find', query], { timeoutMs: 6000 });
+    if (!result.output.trim()) {
+        return [];
+    }
+
+    const matches = parseSkillsFindOutput(result.output);
+    if (matches.length === 0) {
+        return [];
+    }
+
+    const lowerQuery = query.toLowerCase();
+    return matches.filter((skill) => {
+        const haystack = `${skill.repo} ${skill.name} ${skill.description ?? ''}`.toLowerCase();
+        return haystack.includes(lowerQuery);
+    });
+}
+
+function parseSkillsFindOutput(rawOutput: string): SearchResult[] {
+    const output = stripAnsi(rawOutput);
+    const lines = output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    const skillPattern = /^([a-z0-9._-]+\/[a-z0-9._-]+)@([a-z0-9._-]+)$/i;
+    const urlPattern = /^https:\/\/skills\.sh\/([^/\s]+)\/([^/\s]+)\/([^/\s]+)$/i;
+    const parsed: SearchResult[] = [];
+
+    for (const line of lines) {
+        const skillMatch = line.match(skillPattern);
+        if (skillMatch) {
+            parsed.push({
+                repo: skillMatch[1],
+                name: skillMatch[2],
+            });
+            continue;
+        }
+
+        const urlMatch = line.replace(/^└\s*/, '').match(urlPattern);
+        if (urlMatch) {
+            parsed.push({
+                repo: `${urlMatch[1]}/${urlMatch[2]}`,
+                name: urlMatch[3],
+            });
+        }
+    }
+
+    const deduped = new Map<string, SearchResult>();
+    for (const skill of parsed) {
+        deduped.set(`${skill.repo}@${skill.name}`, skill);
+    }
+
+    return Array.from(deduped.values());
+}
+
+function mergeSearchResults(curated: SearchResult[], registry: SearchResult[]): SearchResult[] {
+    const merged = new Map<string, SearchResult>();
+
+    for (const skill of curated) {
+        merged.set(`${skill.repo}@${skill.name}`, { ...skill });
+    }
+
+    for (const skill of registry) {
+        const key = `${skill.repo}@${skill.name}`;
+        const existing = merged.get(key);
+        if (existing) {
+            merged.set(key, {
+                ...skill,
+                ...existing,
+                description: existing.description || skill.description,
+            });
+            continue;
+        }
+        merged.set(key, skill);
+    }
+
+    return Array.from(merged.values());
+}
+
+function filterCuratedSkills(query: string): SearchResult[] {
+    const normalized = query.toLowerCase();
+    if (!normalized) {
+        return [...CURATED_SKILLS];
+    }
+
+    return CURATED_SKILLS.filter((skill) => {
+        const haystack = `${skill.name} ${skill.repo} ${skill.description ?? ''}`.toLowerCase();
+        return haystack.includes(normalized);
+    });
+}
+
+function stripAnsi(input: string): string {
+    return input.replace(/\x1B\[[0-9;]*m/g, '');
 }
 
 /**

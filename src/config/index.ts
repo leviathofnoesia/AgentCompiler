@@ -24,6 +24,27 @@ export interface ConflictConfig {
     [pattern: string]: string;  // e.g., "hooks/*": "prefer:react"
 }
 
+export interface KnowledgeBaseConfig {
+    /** Stable identifier for the knowledge base */
+    name: string;
+    /** Path to a file or directory containing knowledge docs */
+    path: string;
+    /** Glob patterns relative to `path` (default: markdown/text files) */
+    include?: string[];
+    /** Glob exclusion patterns relative to `path` */
+    exclude?: string[];
+    /** Sort priority (higher appears earlier in output) */
+    priority?: number;
+    /** Max file entries to include in compact KB index */
+    maxEntries?: number;
+}
+
+export interface UniversalSourcesConfig {
+    frameworkDocs?: boolean;
+    skillsSh?: boolean;
+    knowledgeBases?: boolean;
+}
+
 export interface SkillCompilerConfig {
     /** Output path for AGENTS.md (default: ./AGENTS.md) */
     out?: string;
@@ -45,6 +66,12 @@ export interface SkillCompilerConfig {
 
     /** Cache TTL in hours (default: 168 = 7 days) */
     cacheTtlHours?: number;
+
+    /** Local project knowledge bases to inject alongside framework skills */
+    knowledgeBases?: KnowledgeBaseConfig[];
+
+    /** Enable/disable source families in the universal pipeline */
+    sources?: UniversalSourcesConfig;
 }
 
 const DEFAULT_CONFIG: SkillCompilerConfig = {
@@ -54,6 +81,11 @@ const DEFAULT_CONFIG: SkillCompilerConfig = {
         format: 'v1',
     },
     cacheTtlHours: 168,
+    sources: {
+        frameworkDocs: true,
+        skillsSh: true,
+        knowledgeBases: true,
+    },
 };
 
 /**
@@ -74,6 +106,10 @@ export async function loadConfig(cwd: string): Promise<SkillCompilerConfig> {
         return {
             ...DEFAULT_CONFIG,
             ...userConfig,
+            sources: {
+                ...DEFAULT_CONFIG.sources,
+                ...userConfig.sources,
+            },
             compression: {
                 ...DEFAULT_CONFIG.compression,
                 ...userConfig.compression,

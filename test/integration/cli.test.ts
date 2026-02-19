@@ -108,4 +108,36 @@ describe('CLI Integration', () => {
     expect(result.error).toBeNull();
     expect(result.stdout).toContain('No skills configured.');
   });
+
+  it('should manage knowledge bases', async () => {
+    const kbDir = join(testDir, 'kb');
+    mkdirSync(kbDir, { recursive: true });
+    await writeFile(join(kbDir, 'guide.md'), '# Guide\n\nUse this first.');
+
+    const cliPath = join(__dirname, '../../dist/cli.js');
+
+    const addResult = await new Promise((resolve) => {
+      exec(`node ${cliPath} kb-add kb --name team-kb --priority 90`, { cwd: testDir }, (error, stdout, stderr) => {
+        resolve({ error, stdout, stderr });
+      });
+    });
+    expect(addResult.error).toBeNull();
+    expect(addResult.stdout).toContain('Added knowledge base "team-kb"');
+
+    const listResult = await new Promise((resolve) => {
+      exec(`node ${cliPath} kb-list`, { cwd: testDir }, (error, stdout, stderr) => {
+        resolve({ error, stdout, stderr });
+      });
+    });
+    expect(listResult.error).toBeNull();
+    expect(listResult.stdout).toContain('team-kb');
+
+    const removeResult = await new Promise((resolve) => {
+      exec(`node ${cliPath} kb-remove team-kb`, { cwd: testDir }, (error, stdout, stderr) => {
+        resolve({ error, stdout, stderr });
+      });
+    });
+    expect(removeResult.error).toBeNull();
+    expect(removeResult.stdout).toContain('Removed knowledge base "team-kb"');
+  });
 });

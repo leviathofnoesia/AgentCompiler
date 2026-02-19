@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-02-18
+
+### Added
+- **Universal compile pipeline**: `adapters -> normalize -> compose -> render -> inject`
+- **Knowledge base support**: local KB ingestion via config and CLI
+- **New KB commands**:
+  - `skill-compiler kb-add <path>`
+  - `skill-compiler kb-list`
+  - `skill-compiler kb-remove <name>`
+- **Programmatic universal API**: `compileKnowledge(...)`
+- **Deterministic composition**: content-hash dedupe + stable ordering + optional byte budgeting
+- **Unit coverage for universal components**: `compose.test.ts`, `kb.test.ts`, `universal.test.ts`
+
+### Changed
+- `compileProject(...)` now runs through the universal pipeline while preserving compatibility
+- Compile results now expose `knowledgeBaseIndexes` and `dropped` counts
+- `list` command now includes configured knowledge bases
+
+---
+
 ## [0.3.0] - 2026-01-29
 
 ### Added
