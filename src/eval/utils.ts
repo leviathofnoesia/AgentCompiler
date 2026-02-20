@@ -108,7 +108,7 @@ async function createFrameworkFixture(framework: string, tempDir: string, code: 
                 build: 'next build'
             },
             dependencies: {
-                next: 'latest',
+                next: '^16.0.0',
                 react: '^19.0.0',
                 'react-dom': '^19.0.0',
             },

@@ -22,7 +22,7 @@ describe('skills.sh Integration', () => {
   });
 
   it('should handle empty search query', async () => {
-    const results = await searchSkills('', { registrySearch: noRegistryResults });
+    const results = await searchSkills('');
     expect(results).toHaveLength(10); // Should return all popular skills
   });
 

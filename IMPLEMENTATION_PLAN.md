@@ -160,7 +160,7 @@ Increase eval representativeness:
 
 ## Working Rules
 
-1. Keep `compileProject` backward compatible unless a major version bump is planned.
+1. Keep `compileProject` backward-compatible unless a major version bump is planned.
 2. Preserve deterministic output ordering for all new features.
 3. Add tests for every adapter/policy extension.
 4. Update `README.md`, `SPEC.md`, and `CHANGELOG.md` with any user-facing behavior change.

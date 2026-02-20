@@ -352,7 +352,7 @@ function mergeConfig(base: SkillCompilerConfig, override: Partial<SkillCompilerC
 
 **Files:** `src/universal/compile.ts`, `src/universal/compose.ts`, `src/universal/types.ts`
 
-**Purpose:** Provide a framework-agnostic, source-adapter based pipeline for building AGENTS.md indexes.
+**Purpose:** Provide a framework-agnostic, source-adapter-based pipeline for building AGENTS.md indexes.
 
 **Interface:**
 

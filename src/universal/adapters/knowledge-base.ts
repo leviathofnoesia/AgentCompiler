@@ -89,8 +89,9 @@ async function collectKnowledgeEntries(cwd: string, kb: KnowledgeBaseConfig): Pr
         .sort((a, b) => a.localeCompare(b));
     const entries = await Promise.all(uniqueSortedFiles.map(async (file) => {
         const fullPath = isSingleFile ? rootPath : join(rootPath, file);
+        const relativePath = normalizePath(relative(rootPath, fullPath)) || basename(fullPath);
         return {
-            relativePath: isSingleFile ? normalizePath(relative(cwd, rootPath)) : file,
+            relativePath,
             title: await extractFirstHeading(fullPath),
         };
     }));

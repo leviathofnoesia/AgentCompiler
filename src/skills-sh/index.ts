@@ -359,7 +359,7 @@ function runNpxCommand(
 
 async function searchSkillsRegistry(query: string): Promise<SearchResult[]> {
     const result = await runNpxCommand(['skills', 'find', query], { timeoutMs: 6000 });
-    if (!result.output.trim()) {
+    if (!result.success || !result.output.trim()) {
         return [];
     }
 

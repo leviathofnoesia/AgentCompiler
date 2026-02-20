@@ -233,7 +233,7 @@ Remote compile/eval workflows and usage analytics.
 
 ### 6.1 System Components
 
-```
+```text
 CLI/API
   -> Universal Compiler
       -> Adapters
