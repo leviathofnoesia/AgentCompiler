@@ -8,8 +8,9 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { injectAgentsMd } from './injector/index.js';
 import { watchProject } from './watcher/index.js';
-import { loadConfig, saveConfig, configExists, createInitialConfig } from './config/index.js';
+import { loadConfig, saveConfig, configExists, createInitialConfig, type KnowledgeBaseConfig } from './config/index.js';
 import { addCustomSkill, listCustomSkills, removeCustomSkill } from './custom/index.js';
+import { addKnowledgeBase, listKnowledgeBases, removeKnowledgeBase } from './kb/index.js';
 import { compileProject } from './core/compile.js';
 import { scanProject } from './scanner/index.js';
 import {
@@ -23,6 +24,34 @@ import {
 import { runEval, runComprehensiveEval, getCompressionStats, printDetailedResults, generateEvalReport, type EvalOptions } from './eval/index.js';
 
 const program = new Command();
+
+function parseIntOption(value?: string): number | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function printKnowledgeBases(knowledgeBases: KnowledgeBaseConfig[]): void {
+    if (knowledgeBases.length === 0) {
+        console.log(chalk.dim('No knowledge bases configured.'));
+        console.log(chalk.dim('Use `skill-compiler kb-add <path>` to add one.'));
+        return;
+    }
+
+    console.log(chalk.bold('Knowledge Bases:\n'));
+    for (const kb of knowledgeBases) {
+        console.log(`  ${chalk.magenta('•')} ${kb.name}`);
+        console.log(chalk.dim(`    Path: ${kb.path}`));
+        if (kb.priority !== undefined) {
+            console.log(chalk.dim(`    Priority: ${kb.priority}`));
+        }
+        if (kb.maxEntries !== undefined) {
+            console.log(chalk.dim(`    Max Entries: ${kb.maxEntries}`));
+        }
+    }
+}
 
 program
     .name('skill-compiler')
@@ -98,13 +127,17 @@ program
             });
             const detected = compileResult.detected;
 
-            if (detected.length === 0) {
-                console.log(chalk.yellow('No frameworks detected. Nothing to do.'));
+            if (detected.length === 0 && compileResult.allIndexes.length === 0) {
+                console.log(chalk.yellow('No frameworks or knowledge sources detected. Nothing to do.'));
                 return;
             }
 
             if (!options.silent) {
-                console.log(chalk.green(`✓ Found ${detected.length} framework(s): ${detected.map(d => d.name).join(', ')}`));
+                if (detected.length > 0) {
+                    console.log(chalk.green(`✓ Found ${detected.length} framework(s): ${detected.map(d => d.name).join(', ')}`));
+                } else {
+                    console.log(chalk.green('✓ No framework docs detected; compiling configured knowledge sources.'));
+                }
             }
 
             if (!options.silent) {
@@ -114,6 +147,12 @@ program
             const allIndexes = compileResult.allIndexes;
             if (compileResult.skillsShIndexes.length > 0 && !options.silent) {
                 console.log(chalk.blue(`📦 Including ${compileResult.skillsShIndexes.length} skills.sh skill(s)...`));
+            }
+            if (compileResult.knowledgeBaseIndexes.length > 0 && !options.silent) {
+                console.log(chalk.blue(`🧠 Including ${compileResult.knowledgeBaseIndexes.length} knowledge base(s)...`));
+            }
+            if ((compileResult.dropped || 0) > 0 && !options.silent) {
+                console.log(chalk.yellow(`⚠️  Dropped ${compileResult.dropped} duplicate/over-budget item(s) during composition.`));
             }
 
             // 2. Inject into AGENTS.md
@@ -211,11 +250,13 @@ program
 
         // List skills.sh skills
         const skillsShSkills = await scanLocalSkills(cwd);
+        const knowledgeBases = await listKnowledgeBases(cwd);
 
-        if (customSkills.length === 0 && skillsShSkills.length === 0) {
+        if (customSkills.length === 0 && skillsShSkills.length === 0 && knowledgeBases.length === 0) {
             console.log(chalk.dim('No skills configured.'));
             console.log(chalk.dim('Use `skill-compiler install <repo>` to add from skills.sh'));
             console.log(chalk.dim('Use `skill-compiler add <path>` to add local skills'));
+            console.log(chalk.dim('Use `skill-compiler kb-add <path>` to add a local knowledge base'));
             return;
         }
 
@@ -240,6 +281,11 @@ program
                 console.log(chalk.dim(`    Path: ${skill.path}`));
             }
         }
+
+        if (knowledgeBases.length > 0) {
+            console.log();
+            printKnowledgeBases(knowledgeBases);
+        }
     });
 
 // ============================================================================
@@ -257,6 +303,58 @@ program
         } else {
             console.log(chalk.yellow(`Skill "${name}" not found.`));
         }
+    });
+
+// ============================================================================
+// KNOWLEDGE BASE COMMANDS
+// ============================================================================
+program
+    .command('kb-add <path>')
+    .description('Add a local knowledge base (markdown/text docs) to be injected into AGENTS.md')
+    .option('-n, --name <name>', 'Knowledge base name')
+    .option('--include <patterns>', 'Include globs (comma-separated)')
+    .option('--exclude <patterns>', 'Exclude globs (comma-separated)')
+    .option('--priority <number>', 'Sort priority (higher appears earlier)')
+    .option('--max-entries <number>', 'Max files to index for this knowledge base')
+    .action(async (path, options) => {
+        try {
+            const kb = await addKnowledgeBase(process.cwd(), path, {
+                name: options.name,
+                include: options.include?.split(',').map((s: string) => s.trim()).filter(Boolean),
+                exclude: options.exclude?.split(',').map((s: string) => s.trim()).filter(Boolean),
+                priority: parseIntOption(options.priority),
+                maxEntries: parseIntOption(options.maxEntries),
+            });
+
+            console.log(chalk.green(`✓ Added knowledge base "${kb.name}"`));
+            console.log(chalk.dim(`  Path: ${kb.path}`));
+            console.log(chalk.dim('Run `skill-compiler` to include it in AGENTS.md.'));
+        } catch (error) {
+            console.error(chalk.red('Error:'), error instanceof Error ? error.message : error);
+            process.exit(1);
+        }
+    });
+
+program
+    .command('kb-list')
+    .description('List configured knowledge bases')
+    .action(async () => {
+        const knowledgeBases = await listKnowledgeBases(process.cwd());
+        printKnowledgeBases(knowledgeBases);
+    });
+
+program
+    .command('kb-remove <name>')
+    .description('Remove a configured knowledge base')
+    .action(async (name) => {
+        const removed = await removeKnowledgeBase(process.cwd(), name);
+        if (!removed) {
+            console.log(chalk.yellow(`Knowledge base "${name}" not found.`));
+            console.log(chalk.dim('Run `skill-compiler` to refresh AGENTS.md and indexes.'));
+            return;
+        }
+        console.log(chalk.green(`✓ Removed knowledge base "${name}"`));
+        console.log(chalk.dim('Run `skill-compiler` to refresh AGENTS.md and indexes.'));
     });
 
 // ============================================================================

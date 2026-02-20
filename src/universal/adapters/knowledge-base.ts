@@ -1,0 +1,200 @@
+import { existsSync, createReadStream } from 'fs';
+import { stat, realpath } from 'fs/promises';
+import { glob } from 'glob';
+import { join, resolve, relative, dirname, basename, isAbsolute } from 'path';
+import { createInterface } from 'readline';
+import type { KnowledgeBaseConfig } from '../../config/index.js';
+import type { AdapterResult, KnowledgeAdapter, KnowledgeItem } from '../types.js';
+
+const DEFAULT_INCLUDE = ['**/*.md', '**/*.mdx', '**/*.txt'];
+const HEADING_SAMPLE_LIMIT = 8;
+
+interface KnowledgeEntry {
+    relativePath: string;
+    title?: string;
+}
+
+function normalizePath(pathValue: string): string {
+    return pathValue.replace(/\\/g, '/');
+}
+
+function normalizeRootLabel(pathValue: string): string {
+    const normalized = normalizePath(pathValue);
+    if (normalized.startsWith('.')) {
+        return normalized;
+    }
+    return `./${normalized}`;
+}
+
+async function isRegularFile(path: string): Promise<boolean> {
+    try {
+        const fileStat = await stat(path);
+        return fileStat.isFile();
+    } catch {
+        return false;
+    }
+}
+
+async function extractFirstHeading(filePath: string): Promise<string | undefined> {
+    try {
+        const stream = createReadStream(filePath, { encoding: 'utf-8', highWaterMark: 4096 });
+        const reader = createInterface({
+            input: stream,
+            crlfDelay: Infinity,
+        });
+
+        try {
+            for await (const line of reader) {
+                const match = line.match(/^#{1,2}\s+(.+)$/);
+                if (match) {
+                    return match[1].trim();
+                }
+            }
+            return undefined;
+        } finally {
+            reader.close();
+            stream.destroy();
+        }
+    } catch {
+        return undefined;
+    }
+}
+
+async function collectKnowledgeEntries(cwd: string, kb: KnowledgeBaseConfig): Promise<KnowledgeEntry[]> {
+    const rootPath = resolve(cwd, kb.path);
+    if (!existsSync(rootPath)) {
+        return [];
+    }
+
+    let realCwd: string;
+    let realRoot: string;
+    try {
+        [realCwd, realRoot] = await Promise.all([realpath(cwd), realpath(rootPath)]);
+    } catch {
+        return [];
+    }
+
+    const relativeToCwd = relative(realCwd, realRoot);
+    if (isAbsolute(relativeToCwd) || relativeToCwd.startsWith('..')) {
+        return [];
+    }
+
+    const include = kb.include && kb.include.length > 0 ? kb.include : DEFAULT_INCLUDE;
+    const exclude = kb.exclude || [];
+
+    let fileList: string[] = [];
+    const isSingleFile = await isRegularFile(realRoot);
+    if (isSingleFile) {
+        fileList = [basename(realRoot)];
+    } else {
+        for (const pattern of include) {
+            const matches = await glob(pattern, {
+                cwd: realRoot,
+                nodir: true,
+                ignore: exclude,
+            });
+            for (const match of matches) {
+                const resolvedMatch = resolve(realRoot, match);
+                let realMatch: string;
+                try {
+                    realMatch = await realpath(resolvedMatch);
+                } catch {
+                    continue;
+                }
+
+                const relativeMatch = relative(realRoot, realMatch);
+                if (isAbsolute(relativeMatch) || relativeMatch.startsWith('..')) {
+                    continue;
+                }
+
+                fileList.push(normalizePath(relativeMatch));
+            }
+        }
+    }
+
+    const uniqueSortedFiles = Array.from(new Set(fileList))
+        .map((item) => normalizePath(item))
+        .sort((a, b) => a.localeCompare(b));
+    const limitedFiles = uniqueSortedFiles.slice(0, kb.maxEntries ?? 80);
+    const entries = await Promise.all(limitedFiles.map(async (file) => {
+        const fullPath = isSingleFile ? realRoot : join(realRoot, file);
+        const relativePath = normalizePath(relative(realRoot, fullPath)) || basename(fullPath);
+        return {
+            relativePath,
+            title: await extractFirstHeading(fullPath),
+        };
+    }));
+
+    return entries;
+}
+
+function buildKnowledgeBaseIndex(
+    cwd: string,
+    kb: KnowledgeBaseConfig,
+    entries: KnowledgeEntry[]
+): string {
+    const rootLabel = normalizeRootLabel(normalizePath(relative(cwd, join(cwd, kb.path))));
+    const lines = [
+        `[${kb.name} Knowledge Base]|root: ${rootLabel}`,
+        `|IMPORTANT: Treat this as project-specific source of truth for ${kb.name}.`,
+    ];
+
+    const byDir = new Map<string, string[]>();
+    for (const entry of entries) {
+        const dir = normalizePath(dirname(entry.relativePath));
+        const key = dir === '.' ? '{root}' : dir;
+        const list = byDir.get(key) || [];
+        list.push(basename(entry.relativePath));
+        byDir.set(key, list);
+    }
+
+    for (const [dir, files] of Array.from(byDir.entries()).sort(([a], [b]) => a.localeCompare(b))) {
+        lines.push(`|${dir}:{${files.join(',')}}`);
+    }
+
+    const headingEntries = entries
+        .filter((entry) => !!entry.title)
+        .slice(0, HEADING_SAMPLE_LIMIT);
+    for (const entry of headingEntries) {
+        lines.push(`|${entry.relativePath}#${entry.title}`);
+    }
+
+    return lines.join('\n');
+}
+
+export const knowledgeBaseAdapter: KnowledgeAdapter = {
+    id: 'knowledge-base',
+    async collect(context): Promise<AdapterResult> {
+        if (context.config.sources?.knowledgeBases === false) {
+            return { items: [] };
+        }
+
+        const configured = context.config.knowledgeBases || [];
+        if (configured.length === 0) {
+            return { items: [] };
+        }
+
+        const items: KnowledgeItem[] = [];
+        for (const kb of configured) {
+            const entries = await collectKnowledgeEntries(context.cwd, kb);
+            if (entries.length === 0) continue;
+
+            const content = buildKnowledgeBaseIndex(context.cwd, kb, entries);
+            items.push({
+                id: `kb:${kb.name}`,
+                kind: 'knowledge-base-index' as const,
+                adapter: 'knowledge-base',
+                name: kb.name,
+                content,
+                priority: kb.priority ?? 80,
+                tags: ['knowledge-base', kb.name],
+                metadata: {
+                    path: kb.path,
+                    entries: entries.length,
+                },
+            });
+        }
+
+        return { items };
+    }
+};

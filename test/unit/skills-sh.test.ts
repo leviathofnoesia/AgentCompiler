@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { searchSkills, getSuggestedSkills } from '../../src/skills-sh/index.js';
 
 describe('skills.sh Integration', () => {
+  const noRegistryResults = async () => [];
+
   it('should search for skills', async () => {
-    const results = await searchSkills('react');
+    const results = await searchSkills('react', { registrySearch: noRegistryResults });
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].name).toBe('vercel-react-best-practices');
     expect(results[0].repo).toBe('vercel-labs/agent-skills');

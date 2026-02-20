@@ -1,8 +1,8 @@
 # AgentCompiler - Product Requirements Document
 
-> **Version:** 1.0  
+> **Version:** 1.1  
 > **Status:** Draft  
-> **Last Updated:** February 14, 2026
+> **Last Updated:** February 18, 2026
 
 ---
 
@@ -19,22 +19,24 @@ AI coding agents (like Claude, Cursor, GitHub Copilot) require framework-specifi
 
 ### 1.2 Solution Overview
 
-**AgentCompiler** is a CLI tool and API that automatically:
+**AgentCompiler** is a universal CLI/API tool that compiles multiple knowledge sources into one deterministic AGENTS.md managed section.
 
-1. **Scans** projects for framework dependencies
-2. **Fetches** version-matched documentation from official sources
-3. **Compresses** documentation into <8KB AGENTS.md indexes
-4. **Injects** compressed indexes into project AGENTS.md
-5. **Evaluates** documentation effectiveness through automated testing
+Core pipeline:
+1. **Adapters** collect source indexes (framework docs, installed skills.sh skills, local knowledge bases)
+2. **Normalize** all source outputs into one internal knowledge-item model
+3. **Compose** with deterministic ordering + dedupe (+ optional byte budget)
+4. **Inject** rendered indexes into AGENTS.md while preserving user-authored content
+5. **Evaluate** documentation effectiveness through automated testing
 
 ### 1.3 Success Metrics
 
 | Metric | Current | Target |
 |--------|---------|--------|
 | Agent Pass Rate (baseline) | 53% | 95%+ |
-| Documentation Coverage | 17 frameworks | 50+ frameworks |
+| Documentation Coverage | 30+ frameworks | 50+ frameworks |
 | Compression Ratio | 100:1 | 200:1 |
 | Build Time | ~30s | <10s |
+| Deterministic Output | No | Yes (CI-safe `--check`) |
 
 ---
 
@@ -98,136 +100,88 @@ AI coding agents (like Claude, Cursor, GitHub Copilot) require framework-specifi
 
 ### 4.1 Core Features
 
-#### F1: Framework Detection
+#### F1: Universal Source Adapters
 **Priority:** P0 (Must Have)
 
-The system MUST automatically detect frameworks from:
-
-- `package.json` dependencies
-- `package.json` devDependencies
-- Config files (e.g., `next.config.js`, `tailwind.config.js`)
-- `.agent/skills/` directory
-- Custom skill definitions in config
+The system MUST support knowledge injection from:
+- Framework documentation sources
+- Installed skills.sh skills
+- Local project knowledge bases (markdown/text trees)
 
 **Requirements:**
-- Support at least 50 frameworks by v2.0
-- Detect framework version when possible
-- Support manual override via `--only` and `--exclude` flags
-- Handle conflicting frameworks (e.g., Next.js vs. Remix)
+- Adapter contract with normalized output shape
+- Source toggles via config (`sources.frameworkDocs`, `sources.skillsSh`, `sources.knowledgeBases`)
+- Support source-specific metadata (name, priority, path)
 
-#### F2: Documentation Fetching
+#### F2: Framework Detection + Fetch
 **Priority:** P0 (Must Have)
 
-The system MUST fetch documentation from:
-
-- GitHub repositories (official framework docs)
-- npm packages (for libraries)
-- Local file system (for private/custom docs)
-- HTTP endpoints (for web-based docs)
+The system MUST detect and fetch framework docs from official registries.
 
 **Requirements:**
-- Cache documentation for configurable duration (default: 7 days)
-- Support version-specific documentation branches/tags
-- Handle rate limiting gracefully
-- Support authentication for private repos
-- Fallback to latest version if specific version not found
+- Detect from package managers + config files + custom skills
+- Version-aware fetching with branch/tag mapping
+- Cache with configurable TTL
+- Manual scope control (`--only`, `--exclude`, `--refresh`)
 
-#### F3: Documentation Compression
+#### F3: Deterministic Composition
 **Priority:** P0 (Must Have)
 
-The system MUST compress documentation into <8KB indexes using the pipe-delimited format:
-
-```
-[Framework Name]|root: ./docs
-|IMPORTANT: {key guidance}
-|{section}:{files}
-```
+The system MUST compose all source items deterministically.
 
 **Requirements:**
-- Target size: <8KB (configurable)
-- Preserve critical API signatures
-- Include "IMPORTANT" directives for key guidance
-- Support custom compression strategies
-- Maintain hierarchical structure
+- Stable ordering by priority and ID
+- Content-hash dedupe
+- Optional byte budget handling with transparent dropped-count reporting
+- CI-safe reproducibility for `--check`
 
-#### F4: AGENTS.md Injection
+#### F4: Index Rendering + Injection
 **Priority:** P0 (Must Have)
 
-The system MUST inject compressed indexes into AGENTS.md while preserving user content.
+The system MUST render compact pipe-delimited indexes and inject into AGENTS.md managed section.
 
 **Requirements:**
-- Preserve content outside managed section
-- Support custom section markers
-- Handle missing AGENTS.md (create new)
-- Support backup before modification
-- Validate output format
+- Preserve user content outside managed markers
+- Support creating AGENTS.md when missing
+- Include framework, skills.sh, and KB index blocks in one section
 
-#### F5: Watch Mode
+#### F5: Knowledge Base Management UX
 **Priority:** P1 (Should Have)
 
-The system SHOULD automatically rebuild indexes when dependencies change.
+The system SHOULD provide first-class KB commands.
 
 **Requirements:**
-- Watch `package.json` for changes
-- Watch `.agent/skills/` directory
-- Debounce rapid changes (500ms)
-- Support file system events (chokidar)
-- Graceful shutdown on SIGTERM
+- `kb-add`, `kb-list`, `kb-remove`
+- Configurable include/exclude globs, priority, max entries
+- Works without framework detection (KB-only projects)
 
 #### F6: Evaluation Suite
 **Priority:** P1 (Should Have)
 
-The system SHOULD provide evaluation capabilities to measure documentation effectiveness.
+The system SHOULD measure effectiveness and guard regressions.
 
 **Requirements:**
-- Compare baseline vs. AGENTS.md performance
-- Support multiple LLM providers (OpenAI, Anthropic, Google, etc.)
-- Built-in test tasks for supported frameworks
-- Custom test task support
-- Generate detailed reports
+- Baseline vs AGENTS.md comparisons
+- Multi-provider LLM support
+- Build/lint/test/performance metrics
+- Reproducible simulation mode
 
-### 4.2 Extended Features
+### 4.2 Future Features
 
-#### F7: Local Documentation Support
+#### F7: Adapter Extensibility
 **Priority:** P2 (Nice to Have)
 
-The system SHOULD support local documentation sources.
+Add official adapter extension hooks for additional enterprise/private sources.
 
-**Requirements:**
-- Scan local directories for `.md`, `.mdx`, `.txt` files
-- Support relative and absolute paths
-- Handle nested directory structures
-- Respect `.gitignore` patterns
-
-#### F8: Plugin System
-**Priority:** P2 (Nice to Have)
-
-The system SHOULD support custom plugins for:
-
-- Custom registries
-- Custom compression algorithms
-- Custom output formats
-- Custom evaluation metrics
-
-#### F9: Team Workspaces
+#### F8: Team Controls
 **Priority:** P3 (Enterprise)
 
-The system SHOULD support team workspaces with:
+Shared workspaces, audit logging, and policy controls.
 
-- Shared configurations
-- Role-based access control
-- Audit logging
-- Team-specific registries
-
-#### F10: API Server
+#### F9: API Server
 **Priority:** P3 (Enterprise)
 
-The system SHOULD provide a REST API for:
-
-- CI/CD integration
-- Remote compilation
-- Team management
-- Usage analytics
+Remote compile/eval workflows and usage analytics.
 
 ---
 
@@ -279,120 +233,55 @@ The system SHOULD provide a REST API for:
 
 ### 6.1 System Components
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        AgentCompiler                             │
-├─────────────────────────────────────────────────────────────────┤
-│  CLI / API Server                                              │
-├──────────┬──────────┬──────────┬──────────┬─────────────────┤
-│ Scanner  │ Fetcher  │Compressor │ Injector  │ Evaluator        │
-├──────────┴──────────┴──────────┴──────────┴─────────────────┤
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ Registries  │  │   Cache     │  │    LLM Client       │  │
-│  │ (Frameworks)│  │  (Files)    │  │ (OpenAI, Anthropic) │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```text
+CLI/API
+  -> Universal Compiler
+      -> Adapters
+         - framework-docs
+         - skills-sh
+         - knowledge-base
+      -> Normalize
+      -> Compose (stable sort + dedupe + budget)
+      -> Render (pipe-delimited indexes)
+      -> Injector (AGENTS.md managed section)
 ```
 
 ### 6.2 Data Flow
 
-```
-package.json → Scanner → Detected Frameworks
-                                  ↓
-                         Fetcher (GitHub/npm)
-                                  ↓
-                         Raw Documentation
-                                  ↓
-                         Compressor
-                                  ↓
-                         Compressed Index
-                                  ↓
-                         Injector
-                                  ↓
-                         AGENTS.md (output)
+```text
+Project Files + Config
+  -> Adapters collect source indexes
+  -> Normalized Knowledge Items
+  -> Deterministic composition
+  -> Combined index list
+  -> AGENTS.md managed section update
 ```
 
 ### 6.3 Key Modules
 
 | Module | Responsibility |
 |--------|----------------|
-| `scanner` | Detect frameworks from project files |
-| `fetcher` | Fetch documentation from remote sources |
-| `compressor` | Compress docs to pipe-delimited format |
-| `injector` | Merge into AGENTS.md |
-| `evaluator` | Test and measure effectiveness |
-| `registries` | Framework definitions and metadata |
-| `llm` | LLM provider integration |
-| `watcher` | File system monitoring |
-| `config` | Configuration management |
+| `universal/compile` | Universal orchestration across all source families |
+| `universal/adapters/*` | Source collection adapters |
+| `universal/compose` | Deterministic ordering, dedupe, budgeting |
+| `scanner` | Framework detection from project files |
+| `fetcher` | Framework doc acquisition + cache |
+| `compressor` | Framework doc compression |
+| `skills-sh` | skills.sh integration |
+| `kb` | Local knowledge-base config management |
+| `injector` | AGENTS.md managed section merge |
+| `eval` + `llm` | Evaluation + model provider clients |
 
 ---
 
 ## 7. Supported Frameworks
 
-### 7.1 Priority 1 (v1.0) - JavaScript/TypeScript
+The registry currently supports JavaScript/TypeScript, Python, and Go ecosystems with 30+ entries, including:
+- JS/TS: Next.js, React, Vue, Astro, SvelteKit, Nuxt, Remix, Hono, Express, NestJS, Fastify, Svelte, Solid, Qwik, Supabase, Tailwind, Prisma, Drizzle, tRPC, Zod, TanStack Query, Bun, Effect
+- Python: Django, FastAPI, Flask, SQLAlchemy, Pydantic
+- Go: Gin, Echo, Fiber, Chi
 
-| Framework | Package Match | Status |
-|-----------|---------------|--------|
-| Next.js | `next` | ✅ Implemented |
-| React | `react` | ✅ Implemented |
-| Vue.js | `vue` | ✅ Implemented |
-| Astro | `astro` | ✅ Implemented |
-| SvelteKit | `@sveltejs/kit` | ✅ Implemented |
-| Supabase | `@supabase/supabase-js` | ✅ Implemented |
-| Tailwind CSS | `tailwindcss` | ✅ Implemented |
-| Prisma | `prisma`, `@prisma/client` | ✅ Implemented |
-| Drizzle ORM | `drizzle-orm` | ✅ Implemented |
-| tRPC | `@trpc/server`, `@trpc/client` | ✅ Implemented |
-| Zod | `zod` | ✅ Implemented |
-| TanStack Query | `@tanstack/react-query` | ✅ Implemented |
-| Nuxt | `nuxt` | ✅ Implemented |
-| Remix | `@remix-run/react` | ✅ Implemented |
-| Hono | `hono` | ✅ Implemented |
-| Effect | `effect` | ✅ Implemented |
-| Bun | `bun` | ✅ Implemented |
-
-### 7.2 Priority 2 (v1.1) - Additional JS Frameworks
-
-| Framework | Package Match | Status |
-|-----------|---------------|--------|
-| Express | `express` | ❌ Missing |
-| NestJS | `@nestjs/core` | ❌ Missing |
-| Fastify | `fastify` | ❌ Missing |
-| Svelte | `svelte` | ❌ Missing |
-| Solid | `solid-js` | ❌ Missing |
-| Qwik | `@builder.io/qwik` | ❌ Missing |
-
-### 7.3 Priority 3 (v2.0) - Python
-
-| Framework | Package Match | Status |
-|-----------|---------------|--------|
-| Django | `django` | ❌ Missing |
-| FastAPI | `fastapi` | ❌ Missing |
-| Flask | `flask` | ❌ Missing |
-| SQLAlchemy | `sqlalchemy` | ❌ Missing |
-| Pydantic | `pydantic` | ❌ Missing |
-
-### 7.4 Priority 4 (v2.0) - Go
-
-| Framework | Package Match | Status |
-|-----------|---------------|--------|
-| Gin | `gin-gonic/gin` | ❌ Missing |
-| Echo | `labstack/echo` | ❌ Missing |
-| Fiber | `gofiber/fiber` | ❌ Missing |
-| Chi | `go-chi/chi` | ❌ Missing |
-
-### 7.5 Priority 5 (v2.0) - Other Languages
-
-| Framework | Language | Status |
-|-----------|----------|--------|
-| Laravel | PHP | ❌ Missing |
-| Ruby on Rails | Ruby | ❌ Missing |
-| Spring Boot | Java | ❌ Missing |
-| Actix | Rust | ❌ Missing |
-| Phoenix | Elixir | ❌ Missing |
+The roadmap target remains 50+ frameworks with expanded language coverage and enterprise/private adapters.
 
 ---
 
@@ -444,20 +333,29 @@ Future versions should integrate with:
       "path": "./docs"
     }
   ],
+  "knowledgeBases": [
+    {
+      "name": "internal-docs",
+      "path": "docs/internal",
+      "include": ["**/*.md", "**/*.mdx"],
+      "exclude": ["archive/**"],
+      "priority": 85,
+      "maxEntries": 100
+    }
+  ],
+  "sources": {
+    "frameworkDocs": true,
+    "skillsSh": true,
+    "knowledgeBases": true
+  },
   "conflicts": {
     "react-*": "prefer:nextjs"
   },
   "compression": {
-    "format": "pipe-delimited",
+    "format": "v1",
     "targetSize": 8192
   },
-  "cache": {
-    "ttlHours": 168
-  },
-  "eval": {
-    "enabled": true,
-    "iterations": 3
-  }
+  "cacheTtlHours": 168
 }
 ```
 
@@ -476,38 +374,36 @@ Future versions should integrate with:
 
 ## 10. Roadmap
 
-### Phase 1: Foundation (v1.0)
-- [ ] Complete framework coverage (20+ frameworks)
-- [ ] Improve compression algorithm
-- [ ] Add watch mode
-- [ ] Basic evaluation suite
+### Phase 1: Universal Tooling (Complete)
+- [x] Universal source-adapter compile pipeline
+- [x] Deterministic composition (stable order + dedupe)
+- [x] skills.sh integration in compile flow
+- [x] Local knowledge-base support + KB CLI commands
 
-### Phase 2: Expansion (v1.1)
-- [ ] Add Python framework support
-- [ ] Add Go framework support
-- [ ] Local documentation support
-- [ ] Plugin system alpha
+### Phase 2: Quality + Coverage (In Progress)
+- [ ] Expand and harden framework registries to 50+
+- [ ] Improve compression effectiveness under strict size budgets
+- [ ] Add richer eval tasks across all supported stacks
+- [ ] Add CI guardrails for reproducibility and diff quality
 
-### Phase 3: Enterprise (v2.0)
-- [ ] 50+ framework support
-- [ ] Team workspaces
-- [ ] API server with auth
-- [ ] Audit logging
+### Phase 3: Enterprise Controls
+- [ ] Team-scoped policies for allowed sources and output rules
+- [ ] Audit trails and provenance reporting
+- [ ] API server enhancements for remote compile/eval operations
 
-### Phase 4: Intelligence (v2.1)
-- [ ] AI-powered compression optimization
-- [ ] Integration with existing benchmarks
-- [ ] Custom test task marketplace
+### Phase 4: Intelligence
+- [ ] Adaptive ranking/composition based on eval outcomes
+- [ ] Benchmark integrations (SWE-bench, others)
 - [ ] Performance analytics dashboard
 
 ---
 
 ## 11. Open Questions
 
-1. **Pricing Model**: Should there be a free tier for the API? What features require payment?
-2. **Plugin Ecosystem**: Should we create a marketplace for community plugins?
-3. **Framework Prioritization**: Which frameworks should we add next based on user demand?
-4. **Benchmark Partnership**: Should we partner with SWE-bench or build our own?
+1. **Source Policies**: What default trust/policy model should apply to each source family?
+2. **Byte Budget Strategy**: Should budget trimming happen globally or per source family?
+3. **Adapter Extensibility**: When to formalize third-party adapter API guarantees?
+4. **Benchmark Scope**: Which benchmarks best reflect agent productivity for this product?
 
 ---
 
@@ -535,7 +431,8 @@ Future versions should integrate with:
 |---------|------|---------|
 | 0.1.0 | 2024-Q1 | Initial release |
 | 0.2.0 | 2024-Q2 | Added 8 frameworks |
-| 0.3.0 | 2024-Q4 | Evaluation suite, LLM integration |
+| 0.3.0 | 2026-01-29 | skills.sh + eval improvements |
+| 0.4.0 | 2026-02-18 | universal compile pipeline + knowledge bases |
 
 ---
 

@@ -1,8 +1,8 @@
 # AgentCompiler - Technical Specification
 
-> **Version:** 1.0  
+> **Version:** 1.1  
 > **Status:** Draft  
-> **Last Updated:** February 14, 2026
+> **Last Updated:** February 18, 2026
 
 ---
 
@@ -31,7 +31,7 @@ This document provides detailed technical specifications for the AgentCompiler s
 - CLI tool for local development
 - Programmatic API for integration
 - Evaluation suite for benchmarking
-- Plugin system architecture
+- Universal source-adapter architecture for skills and knowledge bases
 
 ---
 
@@ -44,21 +44,21 @@ This document provides detailed technical specifications for the AgentCompiler s
 │                         CLI / API Layer                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                    Core Orchestrator                     │    │
-│  │                    (compile.ts)                         │    │
-│  └─────────────────────────────────────────────────────────┘    │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                  Universal Compile Pipeline               │  │
+│  │                                                            │  │
+│  │  Adapters → Normalize → Compose → Render → Inject         │  │
+│  │                                                            │  │
+│  │  Adapters:                                                 │  │
+│  │  - Framework docs (scan/fetch/compress)                   │  │
+│  │  - skills.sh installed skills                              │  │
+│  │  - Local knowledge bases                                   │  │
+│  └────────────────────────────────────────────────────────────┘  │
 │                                                                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
-│  │ Scanner  │→ │ Fetcher  │→ │Compressor│→ │ Injector │     │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘     │
-│       ↓          ↓            ↓            ↓                    │
-│  ┌──────────────────────────────────────────────────────┐     │
-│  │              Supporting Services                        │     │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────┐   │     │
-│  │  │Registries│  │  Cache  │  │LLM Client│  │ Watcher │   │     │
-│  │  └─────────┘  └─────────┘  └─────────┘  └──────────┘   │     │
-│  └──────────────────────────────────────────────────────┘     │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                   Supporting Services                      │  │
+│  │  Registries | Cache | Config | LLM Eval | Watcher         │  │
+│  └────────────────────────────────────────────────────────────┘  │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -66,9 +66,10 @@ This document provides detailed technical specifications for the AgentCompiler s
 ### 2.2 Key Design Principles
 
 1. **Modularity**: Each module has a single responsibility
-2. **Extensibility**: Plugin system for custom registries
-3. **Performance**: Caching and incremental builds
-4. **Reliability**: Graceful error handling and retries
+2. **Extensibility**: Source adapters for new knowledge inputs
+3. **Determinism**: Stable ordering/deduplication for CI-safe output
+4. **Performance**: Caching and incremental builds
+5. **Reliability**: Graceful error handling and retries
 
 ---
 
@@ -152,7 +153,7 @@ function getCachedDoc(framework: string, version: string): Promise<FetchedDoc | 
 ```typescript
 interface CompressionOptions {
     cwd?: string;
-    format?: 'pipe-delimited' | 'json' | 'markdown';
+    format?: 'v1' | 'v2';
     targetSize?: number;   // Target size in bytes (default: 8192)
     conflicts?: ConflictConfig;
 }
@@ -161,6 +162,19 @@ function compressIndex(skill: DetectedSkill, options?: CompressionOptions): Prom
 function estimateSize(content: string): number
 function optimizeForTarget(content: string, targetSize: number): string
 ```
+
+**Format Versions (`CompressionOptions.format`)**
+
+- `v1`:
+  - Compact pipe-delimited index format.
+  - Header line shape: `[Framework Name]|root: ./docs`.
+  - Body lines use `|{section}:{file1,file2}` style groupings.
+  - Minimal metadata, optimized for small token/byte budgets.
+- `v2`:
+  - Extended pipe-delimited index format with metadata-first ordering.
+  - Preserves the same root/header conventions as `v1` for compatibility.
+  - Adds richer section metadata and deterministic field ordering to improve downstream parsing.
+  - Uses the same UTF-8 encoding and escaped newline handling as `v1`.
 
 **Output Format:**
 
@@ -328,24 +342,107 @@ interface SkillCompilerConfig {
     only?: string[];
     exclude?: string[];
     customSkills?: CustomSkillConfig[];
+    knowledgeBases?: KnowledgeBaseConfig[];
+    sources?: {
+        frameworkDocs?: boolean;
+        skillsSh?: boolean;
+        knowledgeBases?: boolean;
+    };
     conflicts?: ConflictConfig;
     compression?: {
-        format?: 'pipe-delimited' | 'json' | 'markdown';
+        format?: 'v1' | 'v2';
         targetSize?: number;
     };
-    cache?: {
-        ttlHours?: number;
-        path?: string;
-    };
-    eval?: {
-        enabled?: boolean;
-        iterations?: number;
-    };
+    cacheTtlHours?: number;
 }
 
 function loadConfig(cwd: string): Promise<SkillCompilerConfig>
 function resolveConfigPath(cwd: string): string | null
 function mergeConfig(base: SkillCompilerConfig, override: Partial<SkillCompilerConfig>): SkillCompilerConfig
+```
+
+### 3.9 Universal Compile Module
+
+**Files:** `src/universal/compile.ts`, `src/universal/compose.ts`, `src/universal/types.ts`
+
+**Purpose:** Provide a framework-agnostic, source-adapter-based pipeline for building AGENTS.md indexes.
+
+**Interface:**
+
+```typescript
+interface UniversalCompileOptions {
+    cwd?: string;
+    only?: string[];
+    exclude?: string[];
+    refresh?: boolean;
+    includeSkillsSh?: boolean;
+    maxBytes?: number;
+}
+
+interface UniversalCompileResult {
+    config: SkillCompilerConfig;
+    items: KnowledgeItem[];
+    allIndexes: string[];
+    detected: DetectedSkill[];
+    indexes: string[];             // framework indexes
+    knowledgeBaseIndexes: string[];
+    skillsShIndexes: string[];
+    dropped: number;               // deduped/over-budget entries
+}
+
+interface KnowledgeItem {
+    id: string;                              // Stable item identifier
+    kind: 'framework-index' | 'skills-sh-index' | 'knowledge-base-index';
+    adapter: string;                         // Producing adapter id
+    name: string;                            // Display/source name
+    content: string;                         // Rendered index payload
+    priority: number;                        // Higher values are preferred in composition
+    source?: string | null;                  // Optional original source path/uri
+    byteSize?: number;                       // Optional precomputed UTF-8 size
+    metadata?: Record<string, any>;          // Adapter-specific metadata
+    tags?: string[];                         // Optional categorical tags
+}
+
+function compileKnowledge(options?: UniversalCompileOptions): Promise<UniversalCompileResult>
+function composeKnowledge(items: KnowledgeItem[], policy?: { maxBytes?: number }): ComposeResult
+
+interface ComposeResult {
+    items: KnowledgeItem[];
+    dropped: number;
+    totalBytes: number;
+    fingerprint: string;
+}
+```
+
+### 3.10 Knowledge Base Module
+
+**File:** `src/kb/index.ts`
+
+**Purpose:** Register local knowledge bases in config for injection into AGENTS.md.
+
+**Interface:**
+
+```typescript
+interface KnowledgeBaseConfig {
+    name: string;
+    path: string;
+    include?: string[];
+    exclude?: string[];
+    priority?: number;
+    maxEntries?: number;
+}
+
+interface AddKnowledgeBaseOptions {
+    name?: string;                 // Override inferred knowledge-base name
+    include?: string[];            // Glob patterns to include
+    exclude?: string[];            // Glob patterns to exclude
+    priority?: number;             // Composition priority override
+    maxEntries?: number;           // Max indexed entries to include
+}
+
+function addKnowledgeBase(cwd: string, source: string, options?: AddKnowledgeBaseOptions): Promise<KnowledgeBaseConfig>
+function listKnowledgeBases(cwd: string): Promise<KnowledgeBaseConfig[]>
+function removeKnowledgeBase(cwd: string, name: string): Promise<boolean>
 ```
 
 ---
@@ -380,15 +477,27 @@ function mergeConfig(base: SkillCompilerConfig, override: Partial<SkillCompilerC
   "only": ["nextjs", "react"],
   "exclude": [],
   "customSkills": [],
+  "knowledgeBases": [
+    {
+      "name": "internal-docs",
+      "path": "docs/internal",
+      "include": ["**/*.md", "**/*.mdx"],
+      "exclude": ["archive/**"],
+      "priority": 85,
+      "maxEntries": 100
+    }
+  ],
+  "sources": {
+    "frameworkDocs": true,
+    "skillsSh": true,
+    "knowledgeBases": true
+  },
   "conflicts": {},
   "compression": {
-    "format": "pipe-delimited",
+    "format": "v1",
     "targetSize": 8192
   },
-  "cache": {
-    "ttlHours": 168,
-    "path": ".skill-compiler-cache"
-  }
+  "cacheTtlHours": 168
 }
 ```
 
@@ -414,7 +523,7 @@ This skill provides guidance for using My Framework.
 ### 5.1 Programmatic API
 
 ```typescript
-import { compileProject } from 'skill-compiler';
+import { compileProject, compileKnowledge } from 'skill-compiler';
 
 const result = await compileProject({
     cwd: process.cwd(),
@@ -427,6 +536,13 @@ const result = await compileProject({
 console.log(result.detected);    // Detected frameworks
 console.log(result.indexes);    // Compressed indexes
 console.log(result.allIndexes);  // All indexes including skills.sh
+
+const universal = await compileKnowledge({
+    cwd: process.cwd(),
+    maxBytes: 20000,
+});
+console.log(universal.knowledgeBaseIndexes); // KB indexes
+console.log(universal.dropped);              // deduped/trimmed entries
 ```
 
 ### 5.2 Core Compile Function
@@ -444,8 +560,10 @@ interface CompileResult {
     config: SkillCompilerConfig;
     detected: DetectedSkill[];
     indexes: string[];
+    knowledgeBaseIndexes: string[];
     skillsShIndexes: string[];
     allIndexes: string[];
+    dropped: number;
 }
 
 function compileProject(options?: CompileOptions): Promise<CompileResult>
@@ -476,6 +594,11 @@ skill-compiler --refresh
 # Add custom skill
 skill-compiler add ./my-docs/
 
+# Add/list/remove local knowledge base
+skill-compiler kb-add ./docs/internal --name internal-docs
+skill-compiler kb-list
+skill-compiler kb-remove internal-docs
+
 # Run evaluation
 skill-compiler eval
 
@@ -490,11 +613,11 @@ skill-compiler eval:comprehensive
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
 | `--cwd` | `-C` | Working directory |
-| `--only` | `-o` | Only these frameworks |
+| `--only` | | Limit to these frameworks |
 | `--exclude` | `-e` | Exclude these frameworks |
 | `--refresh` | `-r` | Force refresh cache |
 | `--dry-run` | `-n` | Preview only |
-| `--output` | `-o` | Output file |
+| `--output` | | Output file |
 | `--config` | `-c` | Config file path |
 | `--silent` | `-s` | Silent mode |
 | `--verbose` | | Verbose output |
@@ -582,6 +705,9 @@ test/
 │   ├── fetcher.test.ts
 │   ├── compressor.test.ts
 │   ├── injector.test.ts
+│   ├── compose.test.ts
+│   ├── kb.test.ts
+│   ├── universal.test.ts
 │   ├── eval.test.ts
 │   └── config.test.ts
 ├── integration/

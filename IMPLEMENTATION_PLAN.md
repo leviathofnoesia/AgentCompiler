@@ -1,335 +1,171 @@
 # AgentCompiler - Implementation Plan
 
-> **Version:** 1.0  
-> **Last Updated:** February 14, 2026
+> **Version:** 1.1  
+> **Last Updated:** February 18, 2026
 
 ---
 
 ## Overview
 
-This document outlines the implementation plan to make AgentCompiler a compelling project. It prioritizes features based on impact, feasibility, and user value.
+This plan tracks the universal-tool architecture now in place and defines the next practical execution path.
+
+Current shipped core:
+- Universal compile pipeline: `adapters -> normalize -> compose -> render -> inject`
+- Adapter families: framework docs, skills.sh, local knowledge bases
+- Deterministic composition: stable ordering + content-hash dedupe + optional byte budget
+- KB management commands: `kb-add`, `kb-list`, `kb-remove`
 
 ---
 
-## Phase 1: Foundation (Quick Wins)
+## Current State (Implemented)
 
-### 1.1 Add More JavaScript Frameworks
+### Universal Pipeline
+- `src/universal/compile.ts`
+- `src/universal/adapters/framework.ts`
+- `src/universal/adapters/skills-sh.ts`
+- `src/universal/adapters/knowledge-base.ts`
+- `src/universal/compose.ts`
+
+### Tooling Surface
+- `compileProject(...)` now runs through universal compiler (backward-compatible result shape)
+- CLI includes KB commands and source-aware output messages
+- Config supports:
+  - `sources.frameworkDocs|skillsSh|knowledgeBases`
+  - `knowledgeBases[]` entries
+
+### Tests Added
+- `test/unit/compose.test.ts`
+- `test/unit/kb.test.ts`
+- `test/unit/universal.test.ts`
+- `test/integration/cli.test.ts` includes KB flow coverage
+
+---
+
+## Phase 1: Hardening (Next)
+
+### 1.1 Composition Policy Controls
+**Priority:** High | **Effort:** Medium
+
+Add explicit per-source and global policy knobs:
+- Per-source byte budgets
+- Min/max retained items per source family
+- Conflict preference at source-family level
+
+Deliverables:
+- `compose` policy schema in config
+- Policy-aware compose tests
+
+### 1.2 Provenance and Explainability
+**Priority:** High | **Effort:** Medium
+
+Expose why each block was included:
+- Source adapter ID
+- Original path/repo reference
+- Priority and dedupe decisions
+
+Deliverables:
+- Optional provenance metadata export
+- `--explain` mode for compile
+
+### 1.3 Output Stability Guarantees
 **Priority:** High | **Effort:** Low
 
-Add support for these popular frameworks that are currently missing:
+Improve CI reliability:
+- Golden snapshots for composed output ordering
+- Strict normalization for path separators and line endings
 
-```typescript
-// src/registries/index.ts additions needed:
-{
-    name: 'express',
-    displayName: 'Express.js',
-    packageMatch: ['express'],
-    configMatch: ['express.config.js'],
-    docSource: { type: 'github', repo: 'expressjs/express', path: 'docs', branch: 'master' },
-    includes: ['**/*.md'],
-},
-{
-    name: 'nestjs',
-    displayName: 'NestJS',
-    packageMatch: ['@nestjs/core'],
-    configMatch: ['nest-cli.json'],
-    docSource: { type: 'github', repo: 'nestjs/docs', path: '.', branch: 'master' },
-    includes: ['**/*.md'],
-},
-{
-    name: 'fastify',
-    displayName: 'Fastify',
-    packageMatch: ['fastify'],
-    configMatch: ['fastify.config.js'],
-    docSource: { type: 'github', repo: 'fastify/fastify', path: 'docs', branch: 'main' },
-    includes: ['**/*.md'],
-},
-{
-    name: 'svelte',
-    displayName: 'Svelte',
-    packageMatch: ['svelte'],
-    docSource: { type: 'github', repo: 'sveltejs/svelte', path: 'packages/svelte/src/docs', branch: 'main' },
-    includes: ['**/*.md'],
-},
-{
-    name: 'solid',
-    displayName: 'Solid',
-    packageMatch: ['solid-js'],
-    docSource: { type: 'github', repo: 'solidjs/solid', path: 'packages/solid-docs', branch: 'main' },
-    includes: ['**/*.mdx'],
-},
-```
-
-### 1.2 Add Python Framework Support
-**Priority:** High | **Effort:** Medium
-
-This is a major expansion that opens the tool to Python developers.
-
-#### Required Changes:
-1. Modify scanner to detect Python package managers (`requirements.txt`, `pyproject.toml`, `Pipfile`)
-2. Add Python-specific registries
-
-```typescript
-// New registries to add:
-{
-    name: 'django',
-    displayName: 'Django',
-    packageMatch: ['django'],
-    configMatch: ['settings.py', 'manage.py'],
-    docSource: { type: 'github', repo: 'django/django', path: 'docs', branch: 'main' },
-    includes: ['**/*.txt'],
-},
-{
-    name: 'fastapi',
-    displayName: 'FastAPI',
-    packageMatch: ['fastapi'],
-    configMatch: ['app.py'],
-    docSource: { type: 'github', repo: 'fastapi/fastapi', path: 'docs', branch: 'master' },
-    includes: ['**/*.md'],
-},
-{
-    name: 'flask',
-    displayName: 'Flask',
-    packageMatch: ['flask'],
-    configMatch: ['app.py'],
-    docSource: { type: 'github', repo: 'pallets/flask', path: 'docs', branch: 'main' },
-    includes: ['**/*.rst', '**/*.md'],
-},
-```
-
-### 1.3 Add Test Tasks for All Frameworks
-**Priority:** High | **Effort:** Medium
-
-Currently only Next.js and React have test tasks. Each framework should have evaluation tasks.
-
-#### Current State (src/eval/index.ts):
-- ✅ Next.js: 9 test tasks
-- ✅ React: 9 test tasks
-- ❌ All other frameworks: 0 test tasks
-
-#### Required:
-```typescript
-// Add to src/eval/index.ts:
-const EXPRESS_TEST_APIS = [
-    { name: 'routing', description: 'Express routing', prompt: 'Create an Express route...', complexity: 'easy' },
-    { name: 'middleware', description: 'Express middleware', prompt: 'Create Express middleware...', complexity: 'medium' },
-    // ... more tasks
-];
-
-const DJANGO_TEST_APIS = [
-    { name: 'models', description: 'Django models', prompt: 'Create a Django model...', complexity: 'medium' },
-    { name: 'views', description: 'Django views', prompt: 'Create a Django view...', complexity: 'easy' },
-    // ... more tasks
-];
-
-// ... similar for each framework
-```
+Deliverables:
+- Snapshot tests for universal output
+- Determinism guard in CI workflow
 
 ---
 
-## Phase 2: Core Features
+## Phase 2: Coverage + Quality
 
-### 2.1 Local Documentation Support
+### 2.1 Framework Registry Expansion
 **Priority:** High | **Effort:** Medium
 
-Allow users to include local documentation.
+Grow to 50+ frameworks with quality gates:
+- Registry correctness checks
+- Doc source health checks
+- Coverage tracking by ecosystem
 
-#### Implementation:
-```typescript
-// src/fetcher/local.ts (new file)
-interface LocalDocSource {
-    type: 'local';
-    path: string;
-}
+### 2.2 Compression Quality Improvements
+**Priority:** High | **Effort:** Medium
 
-// Update scanner to detect local docs
-function scanLocalDocs(cwd: string): Promise<DetectedSkill[]> {
-    // Scan for .md, .mdx, .txt in local directories
-    // Support config option "customSkills"
-}
-```
+Improve information density while respecting size constraints:
+- Better section salience scoring
+- Smarter truncation strategy under budget
+- Optional framework-specific summarizers
 
-### 2.2 Plugin System (Alpha)
-**Priority:** Medium | **Effort:** High
-
-Allow community to create custom registries and compression algorithms.
-
-#### Architecture:
-```
-src/
-├── plugins/
-│   ├── index.ts          # Plugin loader
-│   ├── registry/         # Custom registry plugins
-│   ├── compressor/      # Custom compression plugins
-│   └── evaluator/       # Custom evaluation plugins
-```
-
-#### Plugin Interface:
-```typescript
-interface Plugin {
-    name: string;
-    version: string;
-    
-    // Optional hooks
-    onScan?: (context: ScanContext) => Promise<ScanContext>;
-    onFetch?: (context: FetchContext) => Promise<FetchContext>;
-    onCompress?: (context: CompressContext) => Promise<CompressContext>;
-    onInject?: (context: InjectContext) => Promise<InjectContext>;
-}
-```
-
-### 2.3 Incremental Builds
+### 2.3 Evaluation Expansion
 **Priority:** Medium | **Effort:** Medium
 
-Currently, every run regenerates everything. Add incremental builds.
-
-#### Implementation:
-```typescript
-// src/core/incremental.ts (new file)
-interface CacheEntry {
-    framework: string;
-    version: string;
-    hash: string;
-    lastBuild: Date;
-    index: string;
-}
-
-async function buildIncremental(options: CompileOptions): Promise<CompileResult> {
-    // 1. Scan project
-    const detected = await scanProject(cwd, options);
-    
-    // 2. Check cache for each framework
-    const changed = detected.filter(f => isCacheStale(f));
-    
-    // 3. Only rebuild changed frameworks
-    for (const skill of changed) {
-        await fetchDocs(skill, { refresh: true });
-        const index = await compressIndex(skill);
-        await updateCache(skill, index);
-    }
-    
-    // 4. Return combined result
-    return { ... };
-}
-```
+Increase eval representativeness:
+- Framework-specific task suites beyond baseline
+- Cross-source eval runs (framework-only vs framework+KB vs all)
 
 ---
 
-## Phase 3: Enterprise Features
+## Phase 3: Enterprise Controls
 
-### 3.1 Team Workspaces
-**Priority:** Medium | **Effort:** High
+### 3.1 Source Policy Enforcement
+**Priority:** Medium | **Effort:** Medium
 
-- Shared configurations
-- Team-specific registries
-- Role-based access control
+- Allowlist/denylist by source family and path
+- Policy templates for teams
 
-### 3.2 Audit Logging
-**Priority:** Medium | **Effort:** Low
+### 3.2 Audit and Traceability
+**Priority:** Medium | **Effort:** Medium
 
-```typescript
-// src/audit/index.ts (new file)
-interface AuditEntry {
-    timestamp: Date;
-    userId: string;
-    action: 'scan' | 'fetch' | 'compress' | 'inject';
-    framework?: string;
-    status: 'success' | 'failure';
-    duration: number;
-    metadata?: Record<string, any>;
-}
+- Compile event logs with input/output hashes
+- Provenance manifest artifact generation
 
-function logAudit(entry: AuditEntry): void {
-    // Write to audit log (file or external service)
-}
-```
+### 3.3 API Surface Maturity
+**Priority:** Medium | **Effort:** Medium
 
-### 3.3 API Server
-**Priority:** Low | **Effort:** High
-
-- REST API for CI/CD integration
-- Usage analytics
-- Rate limiting
-
----
-
-## Phase 4: Performance & Quality
-
-### 4.1 Compression Algorithm Improvements
-**Priority:** High | **Effort:** Medium
-
-Current compression is basic. Improve with:
-1. Better file prioritization
-2. Content-aware compression
-3. Token estimation
-
-### 4.2 Benchmark Integration
-**Priority:** Medium | **Effort:** High
-
-Integrate with:
-- SWE-bench
-- BigCode benchmark
-- HumanEval
+- Remote compile and eval endpoints
+- Policy-safe server mode for CI platforms
 
 ---
 
 ## Implementation Checklist
 
-### Phase 1: Foundation
-- [ ] Add Express.js registry
-- [ ] Add NestJS registry
-- [ ] Add Fastify registry
-- [ ] Add Svelte registry
-- [ ] Add Solid registry
-- [ ] Add Python package detection (requirements.txt, pyproject.toml, Pipfile)
-- [ ] Add Django registry
-- [ ] Add FastAPI registry
-- [ ] Add Flask registry
-- [ ] Add Express test tasks
-- [ ] Add Django test tasks
-- [ ] Add FastAPI test tasks
+### Immediate
+- [ ] Add `compose` policy block to config
+- [ ] Implement per-source budget allocation
+- [ ] Add provenance payload support (`--explain`)
+- [ ] Add universal output snapshot tests
 
-### Phase 2: Core Features
-- [ ] Local documentation support
-- [ ] Plugin system (alpha)
-- [ ] Incremental builds
-- [ ] Better error messages
+### Near-Term
+- [ ] Registry health checker
+- [ ] Compression scoring improvements
+- [ ] Cross-source eval presets
 
-### Phase 3: Enterprise
-- [ ] Team workspaces
-- [ ] Audit logging
-- [ ] API server
-
-### Phase 4: Performance
-- [ ] Improved compression algorithm
-- [ ] SWE-bench integration
-- [ ] Performance analytics
+### Later
+- [ ] Team policy profiles
+- [ ] Audit manifest generation
+- [ ] API endpoint parity with CLI
 
 ---
 
 ## Dependencies & Prerequisites
 
-Before implementing, ensure:
-
-1. ✅ Node.js 18+
-2. ✅ TypeScript 5.x
-3. ✅ Vitest for testing
-4. ✅ ESLint for code quality
+1. Node.js 18+
+2. TypeScript 5.x
+3. Vitest
+4. Existing universal pipeline modules in `src/universal/*`
 
 ---
 
-## Getting Started
+## Working Rules
 
-To start implementing any phase:
-
-1. Check the SPEC.md for interface definitions
-2. Check the PRD.md for requirements
-3. Run `npm test` to ensure tests pass
-4. Implement the feature
-5. Add tests
-6. Update documentation
+1. Keep `compileProject` backward-compatible unless a major version bump is planned.
+2. Preserve deterministic output ordering for all new features.
+3. Add tests for every adapter/policy extension.
+4. Update `README.md`, `SPEC.md`, and `CHANGELOG.md` with any user-facing behavior change.
 
 ---
 
-**Document Status:** Draft  
-**Next Review:** TBD
+**Document Status:** Active  
+**Next Review:** March 2026

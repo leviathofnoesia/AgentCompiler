@@ -1,6 +1,6 @@
 # AgentCompiler (skill-compiler)
 
-> Converts skill/framework documentation into compressed AGENTS.md indexes for AI coding agents
+> Universal tool for injecting framework docs, skills, and local knowledge bases into compressed AGENTS.md indexes
 
 [![npm version](https://badge.fury.io/js/skill-compiler.svg)](https://www.npmjs.com/package/skill-compiler)
 [![GitHub](https://img.shields.io/github/license/leviathofnoesia/AgentCompiler)](https://github.com/leviathofnoesia/AgentCompiler)
@@ -36,8 +36,9 @@ npx skill-compiler
 This will:
 1. 🔍 Detect frameworks from your `package.json`
 2. 📥 Download version-matched documentation
-3. 📦 Compress into <8KB indexes
-4. ✅ Generate/update your `AGENTS.md`
+3. 📚 Include installed `skills.sh` skills and configured local knowledge bases
+4. 📦 Compose deterministic indexes
+5. ✅ Generate/update your `AGENTS.md`
 
 ## Usage
 
@@ -60,6 +61,13 @@ npx skill-compiler --refresh
 # Add custom skill
 npx skill-compiler add ./my-skill-docs/
 
+# Add local knowledge base
+npx skill-compiler kb-add ./docs/internal --name internal-docs
+
+# List/remove knowledge bases
+npx skill-compiler kb-list
+npx skill-compiler kb-remove internal-docs
+
 # Run evaluation suite
 npx skill-compiler eval
 
@@ -69,6 +77,16 @@ npx skill-compiler eval:comprehensive
 # Run evaluation with specific provider
 npx skill-compiler eval --provider anthropic --api-key sk-ant-...
 ```
+
+## Universal Sources
+
+`skill-compiler` is now a universal **tool pipeline** that can compose multiple knowledge sources into one managed AGENTS.md section:
+
+- Framework docs (detected + fetched + compressed)
+- Installed `skills.sh` skills
+- Local project knowledge bases (`kb-add` / `.skill-compiler.json`)
+
+Composition is deterministic (stable ordering + dedupe), which keeps `--check` and CI output consistent.
 
 ## LLM Integration
 
@@ -160,6 +178,11 @@ The tool generates a managed section in your `AGENTS.md`:
 |01-app\01-getting-started:{01-installation.mdx,02-project-structure.mdx,...}
 |...
 
+[internal-docs Knowledge Base]|root: ./docs/internal
+|IMPORTANT: Treat this as project-specific source of truth for internal-docs.
+|{root}:{api.md,runbooks.md}
+|guides:{deploy.md,oncall.md}
+
 <!-- END SKILL-COMPILER MANAGED SECTION -->
 ```
 
@@ -177,10 +200,13 @@ Outputs Build, Lint, Test, and Pass Rate metrics comparing baseline vs AGENTS.md
 
 ## How It Works
 
-1. **Scanner** - Detects frameworks from `package.json`, `.agent/skills/`, and config files
-2. **Fetcher** - Downloads version-matched docs from GitHub (cached for 7 days)
-3. **Compressor** - Compresses to <8KB using pipe-delimited format
-4. **Injector** - Merges into AGENTS.md while preserving user content
+`skill-compiler` now runs a universal pipeline:
+
+1. **Adapters** - Collect indexes from framework docs, installed skills.sh skills, and local knowledge bases
+2. **Normalize** - Convert all sources into one internal knowledge item format
+3. **Compose** - Deterministically dedupe/order entries (with optional byte-budget dropping)
+4. **Render** - Emit compact pipe-delimited index blocks
+5. **Inject** - Merge managed section into AGENTS.md while preserving user content
 
 ## REST API
 
@@ -216,6 +242,21 @@ Create `.skill-compiler.json` to customize behavior:
 {
   "out": "./AGENTS.md",
   "only": ["nextjs", "react"],
+  "sources": {
+    "frameworkDocs": true,
+    "skillsSh": true,
+    "knowledgeBases": true
+  },
+  "knowledgeBases": [
+    {
+      "name": "internal-docs",
+      "path": "docs/internal",
+      "include": ["**/*.md", "**/*.mdx"],
+      "exclude": ["archive/**"],
+      "priority": 85,
+      "maxEntries": 100
+    }
+  ],
   "conflicts": {
     "hooks/*": "prefer:react"
   }
