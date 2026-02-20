@@ -379,6 +379,12 @@ interface UniversalCompileResult {
 
 function compileKnowledge(options?: UniversalCompileOptions): Promise<UniversalCompileResult>
 function composeKnowledge(items: KnowledgeItem[], policy?: { maxBytes?: number }): ComposeResult
+
+interface ComposeResult {
+    items: KnowledgeItem[];
+    dropped: number;
+    totalBytes: number;
+}
 ```
 
 ### 3.10 Knowledge Base Module

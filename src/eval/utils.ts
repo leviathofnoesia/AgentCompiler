@@ -2,7 +2,9 @@ import { join } from 'path';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { spawn } from 'child_process';
 
-const ENABLE_BUILD_COMMANDS = process.env.SKILL_COMPILER_EVAL_RUN_BUILD === '1';
+function isBuildEnabled(): boolean {
+    return process.env.SKILL_COMPILER_EVAL_RUN_BUILD === '1';
+}
 
 /**
  * Test generated code by running build/lint/test
@@ -19,7 +21,7 @@ export async function testGeneratedCode(
         const staticValidation = await runStaticValidation(framework, apiName, code);
 
         // Optional full build validation. Enable with SKILL_COMPILER_EVAL_RUN_BUILD=1.
-        if (ENABLE_BUILD_COMMANDS) {
+        if (isBuildEnabled()) {
             if (framework !== 'nextjs' && framework !== 'react') {
                 return staticValidation;
             }
@@ -31,14 +33,20 @@ export async function testGeneratedCode(
                 tempDir,
                 180000
             );
-            if (installResult.success) {
-                const buildResult = await runCommand('npm', ['run', 'build'], tempDir, 120000);
+            if (!installResult.success) {
                 return {
-                    build: buildResult.success,
-                    lint: staticValidation.lint,
-                    test: buildResult.success && staticValidation.test
+                    ...staticValidation,
+                    build: false,
+                    test: false,
                 };
             }
+
+            const buildResult = await runCommand('npm', ['run', 'build'], tempDir, 120000);
+            return {
+                build: buildResult.success,
+                lint: staticValidation.lint,
+                test: buildResult.success && staticValidation.test
+            };
         }
 
         return staticValidation;
@@ -61,7 +69,7 @@ function runCommand(
     timeoutMs: number = 60000
 ): Promise<{ success: boolean; output: string }> {
     return new Promise((resolve) => {
-        const child = spawn(cmd, args, { cwd, shell: true });
+        const child = spawn(cmd, args, { cwd });
         let output = '';
         let settled = false;
         let timer: NodeJS.Timeout | undefined;
@@ -137,7 +145,8 @@ async function createFrameworkFixture(framework: string, tempDir: string, code: 
                 'react-dom': '^18.3.0',
             },
             devDependencies: {
-                vite: '^5.0.0'
+                vite: '^5.0.0',
+                '@vitejs/plugin-react': '^4.3.2',
             }
         };
 
@@ -149,6 +158,10 @@ async function createFrameworkFixture(framework: string, tempDir: string, code: 
             "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\n\nReactDOM.createRoot(document.getElementById('root')).render(<App />);\n"
         );
         await writeFile(join(tempDir, 'src', 'App.jsx'), code);
+        await writeFile(
+            join(tempDir, 'vite.config.js'),
+            "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({\n  plugins: [react()],\n});\n"
+        );
         return;
     }
 
@@ -197,9 +210,7 @@ async function validateSyntax(code: string, framework: string): Promise<boolean>
 
 function containsPlaceholderPatterns(code: string): boolean {
     const placeholderPatterns = [
-        /\bTODO\b/i,
-        /\bFIXME\b/i,
-        /\bTBD\b/i,
+        /(?:\/\/|\/\*|#)\s*(?:TODO|FIXME|TBD)\b/i,
         /throw\s+new\s+Error\s*\(\s*['"`]\s*(not implemented|todo|stub)/i,
         /\/\*\s*stub\s*\*\//i,
     ];

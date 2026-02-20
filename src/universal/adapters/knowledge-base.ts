@@ -1,13 +1,13 @@
-import { existsSync } from 'fs';
-import { createReadStream } from 'fs';
+import { existsSync, createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import { glob } from 'glob';
-import { join, relative, dirname, basename } from 'path';
+import { join, resolve, relative, dirname, basename, isAbsolute } from 'path';
 import { createInterface } from 'readline';
 import type { KnowledgeBaseConfig } from '../../config/index.js';
 import type { AdapterResult, KnowledgeAdapter, KnowledgeItem } from '../types.js';
 
 const DEFAULT_INCLUDE = ['**/*.md', '**/*.mdx', '**/*.txt'];
+const HEADING_SAMPLE_LIMIT = 8;
 
 interface KnowledgeEntry {
     relativePath: string;
@@ -61,7 +61,13 @@ async function extractFirstHeading(filePath: string): Promise<string | undefined
 }
 
 async function collectKnowledgeEntries(cwd: string, kb: KnowledgeBaseConfig): Promise<KnowledgeEntry[]> {
-    const rootPath = join(cwd, kb.path);
+    const resolvedCwd = resolve(cwd);
+    const rootPath = resolve(cwd, kb.path);
+    const relativeToCwd = relative(resolvedCwd, rootPath);
+    if (isAbsolute(relativeToCwd) || relativeToCwd.startsWith('..') || relativeToCwd === '..') {
+        return [];
+    }
+
     if (!existsSync(rootPath)) {
         return [];
     }
@@ -125,7 +131,7 @@ function buildKnowledgeBaseIndex(
 
     const headingEntries = entries
         .filter((entry) => !!entry.title)
-        .slice(0, 8);
+        .slice(0, HEADING_SAMPLE_LIMIT);
     for (const entry of headingEntries) {
         lines.push(`|${entry.relativePath}#${entry.title}`);
     }
