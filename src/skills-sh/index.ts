@@ -425,6 +425,7 @@ function mergeSearchResults(curated: SearchResult[], registry: SearchResult[]): 
         const key = `${skill.repo}@${skill.name}`;
         const existing = merged.get(key);
         if (existing) {
+            // Preserve curated fields as authoritative; fall back to registry description if curated is empty.
             merged.set(key, {
                 ...skill,
                 ...existing,

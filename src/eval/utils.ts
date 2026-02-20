@@ -70,7 +70,7 @@ function runCommand(
     timeoutMs: number = 60000
 ): Promise<{ success: boolean; output: string }> {
     return new Promise((resolve) => {
-        const child = spawn(cmd, args, { cwd, shell: true });
+        const child = spawn(cmd, args, { cwd, shell: process.platform === 'win32' });
         let output = '';
         let settled = false;
         let timer: NodeJS.Timeout | undefined;
@@ -127,7 +127,7 @@ async function createFrameworkFixture(framework: string, tempDir: string, code: 
         await mkdir(join(tempDir, 'app'), { recursive: true });
         await writeFile(
             join(tempDir, 'app', 'layout.tsx'),
-            `export default function RootLayout({ children }: { children: unknown }) {\n  return (\n    <html lang="en">\n      <body>{children as any}</body>\n    </html>\n  );\n}\n`
+            "import type { ReactNode } from 'react';\n\nexport default function RootLayout({ children }: { children: ReactNode }) {\n  return (\n    <html lang=\"en\">\n      <body>{children}</body>\n    </html>\n  );\n}\n"
         );
         await writeFile(join(tempDir, 'app', 'page.tsx'), code);
         return;

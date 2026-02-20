@@ -179,8 +179,7 @@ export const knowledgeBaseAdapter: KnowledgeAdapter = {
             const entries = await collectKnowledgeEntries(context.cwd, kb);
             if (entries.length === 0) continue;
 
-            const limitedEntries = entries.slice(0, kb.maxEntries ?? 80);
-            const content = buildKnowledgeBaseIndex(context.cwd, kb, limitedEntries);
+            const content = buildKnowledgeBaseIndex(context.cwd, kb, entries);
             items.push({
                 id: `kb:${kb.name}`,
                 kind: 'knowledge-base-index' as const,
@@ -191,7 +190,7 @@ export const knowledgeBaseAdapter: KnowledgeAdapter = {
                 tags: ['knowledge-base', kb.name],
                 metadata: {
                     path: kb.path,
-                    entries: limitedEntries.length,
+                    entries: entries.length,
                 },
             });
         }

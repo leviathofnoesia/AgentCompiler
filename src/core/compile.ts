@@ -1,9 +1,9 @@
 /**
  * Compile Orchestrator
- * Shared pipeline for scanning, fetching, and compressing docs
+ * Thin wrapper around universal compile orchestration via compileKnowledge().
  */
 
-import { loadConfig, type SkillCompilerConfig } from '../config/index.js';
+import { type SkillCompilerConfig } from '../config/index.js';
 import { type DetectedSkill } from '../scanner/index.js';
 import { compileKnowledge } from '../universal/compile.js';
 
@@ -27,10 +27,8 @@ export interface CompileResult {
 
 export async function compileProject(options: CompileOptions = {}): Promise<CompileResult> {
     const cwd = options.cwd || process.cwd();
-    const config = await loadConfig(cwd);
     const compiled = await compileKnowledge({
         cwd,
-        config,
         only: options.only,
         exclude: options.exclude,
         refresh: options.refresh,

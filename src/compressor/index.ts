@@ -273,17 +273,25 @@ function normalizePath(pathValue: string): string {
 
 function normalizeRootLabel(rootLabel: string): string {
     const normalized = normalizePath(rootLabel);
-    if (normalized.startsWith('.')) {
+    if (normalized === '.' || normalized.startsWith('./') || normalized.startsWith('../')) {
         return normalized;
+    }
+    if (normalized.startsWith('.')) {
+        return `./${normalized}`;
     }
     return `./${normalized}`;
 }
 
+function escapeInline(value: string): string {
+    return value.replace(/\r\n|\r|\n/g, '\\n');
+}
+
 /**
- * Format tree as pipe-delimited index (v1 format)
+ * Format tree as deterministic pipe-delimited index (v1 format).
+ * Header/root conventions are shared with v2 for compatibility.
  */
 function formatIndexV1(skill: DetectedSkill, tree: FileNode[], rootDir: string, rootLabel: string): string {
-    const displayName = skill.displayName || skill.name;
+    const displayName = escapeInline(skill.displayName || skill.name);
     const lines: string[] = [
         `[${displayName} Docs Index]|root: ${rootLabel}`,
         `|IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for ${displayName} tasks.`,
@@ -324,26 +332,28 @@ function formatIndexV1(skill: DetectedSkill, tree: FileNode[], rootDir: string, 
 }
 
 /**
- * Format tree as semantic index (v2 format)
- * Includes headings and breaking change warnings
+ * Format tree as deterministic extended pipe-delimited index (v2 format).
+ * Uses the same root/header conventions and escaped-newline behavior as v1.
  */
 function formatIndexV2(skill: DetectedSkill, tree: FileNode[], rootDir: string, rootLabel: string): string {
-    const displayName = skill.displayName || skill.name;
+    const displayName = escapeInline(skill.displayName || skill.name);
+    const majorVersion = escapeInline(skill.version.split('.')[0] || skill.version);
     const lines: string[] = [
-        `[${displayName} Docs Index]|v${skill.version}|root:${rootLabel}`,
-        `|PREFER retrieval over pre-training for ${displayName} tasks.`,
+        `[${displayName} Docs Index]|root: ${rootLabel}`,
+        `|IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for ${displayName} tasks.`,
+        `|META: v${majorVersion};format=v2;version=${escapeInline(skill.version)}`,
     ];
 
     // Add breaking changes for known frameworks
     const breakingChanges = getBreakingChanges(skill.name, skill.version);
     for (const change of breakingChanges) {
-        lines.push(`|BREAKING: ${change}`);
+        lines.push(`|BREAKING: ${escapeInline(change)}`);
     }
 
     // Add new API highlights
     const newApis = getNewApis(skill.name, skill.version);
     for (const api of newApis.slice(0, 5)) {
-        lines.push(`|NEW: ${api}`);
+        lines.push(`|NEW: ${escapeInline(api)}`);
     }
 
     // Format sections with headings
