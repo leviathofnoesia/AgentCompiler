@@ -4,7 +4,7 @@
  */
 
 import { existsSync } from 'fs';
-import { basename, join } from 'path';
+import { basename, dirname, join } from 'path';
 import { loadConfig, saveConfig, type KnowledgeBaseConfig } from '../config/index.js';
 
 export interface AddKnowledgeBaseOptions {
@@ -15,8 +15,32 @@ export interface AddKnowledgeBaseOptions {
     maxEntries?: number;
 }
 
+function sanitizeKnowledgeBaseName(value: string): string {
+    return value
+        .replace(/[^a-z0-9-]/gi, '-')
+        .toLowerCase()
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+function isValidKnowledgeBaseName(value: string): boolean {
+    return value.length > 0 && /[a-z0-9]/.test(value);
+}
+
 function toKnowledgeBaseName(source: string): string {
-    return basename(source).replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+    const sourceBase = basename(source);
+    let resolved = sanitizeKnowledgeBaseName(sourceBase);
+
+    if (!isValidKnowledgeBaseName(resolved)) {
+        const parentBase = basename(dirname(source));
+        resolved = sanitizeKnowledgeBaseName(parentBase);
+    }
+
+    if (!isValidKnowledgeBaseName(resolved)) {
+        throw new Error(`Could not infer a knowledge base name from "${source}". Pass --name explicitly.`);
+    }
+
+    return resolved;
 }
 
 /**
@@ -32,7 +56,10 @@ export async function addKnowledgeBase(
         throw new Error(`Knowledge base path not found: ${source}`);
     }
 
-    const name = options.name || toKnowledgeBaseName(source);
+    const name = options.name ? sanitizeKnowledgeBaseName(options.name) : toKnowledgeBaseName(source);
+    if (!isValidKnowledgeBaseName(name)) {
+        throw new Error('Knowledge base name must include at least one alphanumeric character.');
+    }
     const config = await loadConfig(cwd);
     const knowledgeBases = config.knowledgeBases || [];
 

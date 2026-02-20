@@ -26,6 +26,8 @@ export interface SearchResult {
     description?: string;
 }
 
+type RegistrySearchFn = (query: string) => Promise<SearchResult[]>;
+
 const CURATED_SKILLS: SearchResult[] = [
     { name: 'vercel-react-best-practices', repo: 'vercel-labs/agent-skills', downloads: 86600, description: 'React best practices from Vercel' },
     { name: 'web-design-guidelines', repo: 'vercel-labs/agent-skills', downloads: 45000, description: 'Modern web design guidelines' },
@@ -42,15 +44,19 @@ const CURATED_SKILLS: SearchResult[] = [
 /**
  * Search skills.sh registry
  */
-export async function searchSkills(query: string): Promise<SearchResult[]> {
+export async function searchSkills(
+    query: string,
+    options: { registrySearch?: RegistrySearchFn } = {}
+): Promise<SearchResult[]> {
     const trimmedQuery = query.trim();
     const curatedMatches = filterCuratedSkills(trimmedQuery);
+    const registrySearch = options.registrySearch || searchSkillsRegistry;
 
-    if (!trimmedQuery || process.env.NODE_ENV === 'test') {
+    if (!trimmedQuery) {
         return curatedMatches;
     }
 
-    const registryMatches = await searchSkillsRegistry(trimmedQuery);
+    const registryMatches = await registrySearch(trimmedQuery);
     if (registryMatches.length === 0) {
         return curatedMatches;
     }
@@ -316,10 +322,14 @@ function runNpxCommand(
 
         let output = '';
         let settled = false;
+        let timer: NodeJS.Timeout | undefined;
 
         const finalize = (result: { success: boolean; output: string }) => {
             if (settled) return;
             settled = true;
+            if (timer) {
+                clearTimeout(timer);
+            }
             resolve(result);
         };
 
@@ -340,7 +350,7 @@ function runNpxCommand(
         });
 
         // Timeout after a bounded wait to avoid hanging CLI commands
-        setTimeout(() => {
+        timer = setTimeout(() => {
             child.kill();
             finalize({ success: false, output: output || 'Timeout' });
         }, timeoutMs);

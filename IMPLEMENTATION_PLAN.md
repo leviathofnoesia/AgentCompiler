@@ -27,7 +27,7 @@ Current shipped core:
 - `src/universal/compose.ts`
 
 ### Tooling Surface
-- `compileProject(...)` now runs through universal compiler (backward compatible result shape)
+- `compileProject(...)` now runs through universal compiler (backward-compatible result shape)
 - CLI includes KB commands and source-aware output messages
 - Config supports:
   - `sources.frameworkDocs|skillsSh|knowledgeBases`

@@ -45,9 +45,31 @@ export async function compileKnowledge(options: UniversalCompileOptions = {}): P
         },
     };
 
-    const frameworkResult = await frameworkDocsAdapter.collect(context);
-    const knowledgeBaseResult = await knowledgeBaseAdapter.collect(context);
-    const skillsShResult = await skillsShAdapter.collect(context);
+    const [frameworkSettled, knowledgeBaseSettled, skillsShSettled] = await Promise.allSettled([
+        frameworkDocsAdapter.collect(context),
+        knowledgeBaseAdapter.collect(context),
+        skillsShAdapter.collect(context),
+    ]);
+
+    if (frameworkSettled.status === 'rejected') {
+        console.error('Framework adapter failed:', frameworkSettled.reason);
+    }
+    if (knowledgeBaseSettled.status === 'rejected') {
+        console.error('Knowledge-base adapter failed:', knowledgeBaseSettled.reason);
+    }
+    if (skillsShSettled.status === 'rejected') {
+        console.error('skills.sh adapter failed:', skillsShSettled.reason);
+    }
+
+    const frameworkResult = frameworkSettled.status === 'fulfilled'
+        ? frameworkSettled.value
+        : { items: [], detected: [] };
+    const knowledgeBaseResult = knowledgeBaseSettled.status === 'fulfilled'
+        ? knowledgeBaseSettled.value
+        : { items: [] };
+    const skillsShResult = skillsShSettled.status === 'fulfilled'
+        ? skillsShSettled.value
+        : { items: [] };
 
     const allItems = [
         ...frameworkResult.items,

@@ -153,7 +153,7 @@ function getCachedDoc(framework: string, version: string): Promise<FetchedDoc | 
 ```typescript
 interface CompressionOptions {
     cwd?: string;
-    format?: 'pipe-delimited' | 'json' | 'markdown';
+    format?: 'v1' | 'v2';
     targetSize?: number;   // Target size in bytes (default: 8192)
     conflicts?: ConflictConfig;
 }
@@ -572,11 +572,11 @@ skill-compiler eval:comprehensive
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
 | `--cwd` | `-C` | Working directory |
-| `--only` | `-o` | Only these frameworks |
+| `--only` | | Only these frameworks |
 | `--exclude` | `-e` | Exclude these frameworks |
 | `--refresh` | `-r` | Force refresh cache |
 | `--dry-run` | `-n` | Preview only |
-| `--output` | `-o` | Output file |
+| `--output` | | Output file |
 | `--config` | `-c` | Config file path |
 | `--silent` | `-s` | Silent mode |
 | `--verbose` | | Verbose output |

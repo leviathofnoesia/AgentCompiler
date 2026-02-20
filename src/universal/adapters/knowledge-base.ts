@@ -1,7 +1,9 @@
 import { existsSync } from 'fs';
-import { readFile, stat } from 'fs/promises';
+import { createReadStream } from 'fs';
+import { stat } from 'fs/promises';
 import { glob } from 'glob';
 import { join, relative, dirname, basename } from 'path';
+import { createInterface } from 'readline';
 import type { KnowledgeBaseConfig } from '../../config/index.js';
 import type { AdapterResult, KnowledgeAdapter, KnowledgeItem } from '../types.js';
 
@@ -35,9 +37,24 @@ async function isRegularFile(path: string): Promise<boolean> {
 
 async function extractFirstHeading(filePath: string): Promise<string | undefined> {
     try {
-        const content = await readFile(filePath, 'utf-8');
-        const match = content.match(/^#{1,2}\s+(.+)$/m);
-        return match?.[1]?.trim();
+        const stream = createReadStream(filePath, { encoding: 'utf-8', highWaterMark: 4096 });
+        const reader = createInterface({
+            input: stream,
+            crlfDelay: Infinity,
+        });
+
+        try {
+            for await (const line of reader) {
+                const match = line.match(/^#{1,2}\s+(.+)$/);
+                if (match) {
+                    return match[1].trim();
+                }
+            }
+            return undefined;
+        } finally {
+            reader.close();
+            stream.destroy();
+        }
     } catch {
         return undefined;
     }
@@ -132,7 +149,7 @@ export const knowledgeBaseAdapter: KnowledgeAdapter = {
             const entries = await collectKnowledgeEntries(context.cwd, kb);
             if (entries.length === 0) continue;
 
-            const limitedEntries = entries.slice(0, kb.maxEntries || 80);
+            const limitedEntries = entries.slice(0, kb.maxEntries ?? 80);
             const content = buildKnowledgeBaseIndex(context.cwd, kb, limitedEntries);
             items.push({
                 id: `kb:${kb.name}`,

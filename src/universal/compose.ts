@@ -10,8 +10,15 @@ function stableSort(items: KnowledgeItem[]): KnowledgeItem[] {
 }
 
 function contentFingerprint(content: string): string {
+    const normalized = content
+        .replace(/\r\n/g, '\n')
+        .trim()
+        .split('\n')
+        .map((line) => line.replace(/[ \t]+$/g, ''))
+        .join('\n');
+
     return createHash('sha256')
-        .update(content.trim().replace(/\s+/g, ' '), 'utf-8')
+        .update(normalized, 'utf-8')
         .digest('hex');
 }
 
@@ -30,8 +37,9 @@ export function composeKnowledge(
         }
     }
 
-    const ordered = stableSort(Array.from(deduped.values()));
-    if (!policy.maxBytes) {
+    const ordered = Array.from(deduped.values());
+    const maxBytes = policy.maxBytes;
+    if (maxBytes == null) {
         const totalBytes = ordered.reduce((sum, item) => sum + Buffer.byteLength(item.content, 'utf-8'), 0);
         return {
             items: ordered,
@@ -46,7 +54,7 @@ export function composeKnowledge(
 
     for (const item of ordered) {
         const itemBytes = Buffer.byteLength(item.content, 'utf-8');
-        if (totalBytes + itemBytes > policy.maxBytes) {
+        if (totalBytes + itemBytes > maxBytes) {
             dropped++;
             continue;
         }

@@ -8,7 +8,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { injectAgentsMd } from './injector/index.js';
 import { watchProject } from './watcher/index.js';
-import { loadConfig, saveConfig, configExists, createInitialConfig } from './config/index.js';
+import { loadConfig, saveConfig, configExists, createInitialConfig, type KnowledgeBaseConfig } from './config/index.js';
 import { addCustomSkill, listCustomSkills, removeCustomSkill } from './custom/index.js';
 import { addKnowledgeBase, listKnowledgeBases, removeKnowledgeBase } from './kb/index.js';
 import { compileProject } from './core/compile.js';
@@ -24,6 +24,34 @@ import {
 import { runEval, runComprehensiveEval, getCompressionStats, printDetailedResults, generateEvalReport, type EvalOptions } from './eval/index.js';
 
 const program = new Command();
+
+function parseIntOption(value?: string): number | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function printKnowledgeBases(knowledgeBases: KnowledgeBaseConfig[]): void {
+    if (knowledgeBases.length === 0) {
+        console.log(chalk.dim('No knowledge bases configured.'));
+        console.log(chalk.dim('Use `skill-compiler kb-add <path>` to add one.'));
+        return;
+    }
+
+    console.log(chalk.bold('Knowledge Bases:\n'));
+    for (const kb of knowledgeBases) {
+        console.log(`  ${chalk.magenta('•')} ${kb.name}`);
+        console.log(chalk.dim(`    Path: ${kb.path}`));
+        if (kb.priority !== undefined) {
+            console.log(chalk.dim(`    Priority: ${kb.priority}`));
+        }
+        if (kb.maxEntries !== undefined) {
+            console.log(chalk.dim(`    Max Entries: ${kb.maxEntries}`));
+        }
+    }
+}
 
 program
     .name('skill-compiler')
@@ -255,17 +283,8 @@ program
         }
 
         if (knowledgeBases.length > 0) {
-            console.log(chalk.bold('\nKnowledge Bases:\n'));
-            for (const kb of knowledgeBases) {
-                console.log(`  ${chalk.magenta('•')} ${kb.name}`);
-                console.log(chalk.dim(`    Path: ${kb.path}`));
-                if (kb.priority !== undefined) {
-                    console.log(chalk.dim(`    Priority: ${kb.priority}`));
-                }
-                if (kb.maxEntries !== undefined) {
-                    console.log(chalk.dim(`    Max Entries: ${kb.maxEntries}`));
-                }
-            }
+            console.log();
+            printKnowledgeBases(knowledgeBases);
         }
     });
 
@@ -303,8 +322,8 @@ program
                 name: options.name,
                 include: options.include?.split(',').map((s: string) => s.trim()).filter(Boolean),
                 exclude: options.exclude?.split(',').map((s: string) => s.trim()).filter(Boolean),
-                priority: options.priority ? parseInt(options.priority, 10) : undefined,
-                maxEntries: options.maxEntries ? parseInt(options.maxEntries, 10) : undefined,
+                priority: parseIntOption(options.priority),
+                maxEntries: parseIntOption(options.maxEntries),
             });
 
             console.log(chalk.green(`✓ Added knowledge base "${kb.name}"`));
@@ -321,23 +340,7 @@ program
     .description('List configured knowledge bases')
     .action(async () => {
         const knowledgeBases = await listKnowledgeBases(process.cwd());
-        if (knowledgeBases.length === 0) {
-            console.log(chalk.dim('No knowledge bases configured.'));
-            console.log(chalk.dim('Use `skill-compiler kb-add <path>` to add one.'));
-            return;
-        }
-
-        console.log(chalk.bold('Knowledge Bases:\n'));
-        for (const kb of knowledgeBases) {
-            console.log(`  ${chalk.magenta('•')} ${kb.name}`);
-            console.log(chalk.dim(`    Path: ${kb.path}`));
-            if (kb.priority !== undefined) {
-                console.log(chalk.dim(`    Priority: ${kb.priority}`));
-            }
-            if (kb.maxEntries !== undefined) {
-                console.log(chalk.dim(`    Max Entries: ${kb.maxEntries}`));
-            }
-        }
+        printKnowledgeBases(knowledgeBases);
     });
 
 program
@@ -347,9 +350,11 @@ program
         const removed = await removeKnowledgeBase(process.cwd(), name);
         if (!removed) {
             console.log(chalk.yellow(`Knowledge base "${name}" not found.`));
+            console.log(chalk.dim('Run `skill-compiler` to refresh AGENTS.md and indexes.'));
             return;
         }
         console.log(chalk.green(`✓ Removed knowledge base "${name}"`));
+        console.log(chalk.dim('Run `skill-compiler` to refresh AGENTS.md and indexes.'));
     });
 
 // ============================================================================

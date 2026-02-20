@@ -248,7 +248,7 @@ CLI/API
 
 ### 6.2 Data Flow
 
-```
+```text
 Project Files + Config
   -> Adapters collect source indexes
   -> Normalized Knowledge Items

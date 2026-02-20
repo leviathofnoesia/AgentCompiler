@@ -16,12 +16,15 @@ export async function testGeneratedCode(
 
     try {
         await mkdir(tempDir, { recursive: true });
-        await createFrameworkFixture(framework, tempDir, code);
-
         const staticValidation = await runStaticValidation(framework, apiName, code);
 
         // Optional full build validation. Enable with SKILL_COMPILER_EVAL_RUN_BUILD=1.
-        if (ENABLE_BUILD_COMMANDS && (framework === 'nextjs' || framework === 'react')) {
+        if (ENABLE_BUILD_COMMANDS) {
+            if (framework !== 'nextjs' && framework !== 'react') {
+                return staticValidation;
+            }
+
+            await createFrameworkFixture(framework, tempDir, code);
             const installResult = await runCommand(
                 'npm',
                 ['install', '--no-audit', '--no-fund'],
@@ -61,10 +64,14 @@ function runCommand(
         const child = spawn(cmd, args, { cwd, shell: true });
         let output = '';
         let settled = false;
+        let timer: NodeJS.Timeout | undefined;
 
         const finalize = (result: { success: boolean; output: string }) => {
             if (settled) return;
             settled = true;
+            if (timer) {
+                clearTimeout(timer);
+            }
             resolve(result);
         };
 
@@ -84,7 +91,7 @@ function runCommand(
             finalize({ success: false, output });
         });
 
-        setTimeout(() => {
+        timer = setTimeout(() => {
             child.kill();
             finalize({ success: false, output: output || 'Timeout' });
         }, timeoutMs);
@@ -142,7 +149,12 @@ async function createFrameworkFixture(framework: string, tempDir: string, code: 
             "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\n\nReactDOM.createRoot(document.getElementById('root')).render(<App />);\n"
         );
         await writeFile(join(tempDir, 'src', 'App.jsx'), code);
+        return;
     }
+
+    throw new Error(
+        `createFrameworkFixture does not support framework "${framework}". Supported values: nextjs, react.`
+    );
 }
 
 async function runStaticValidation(

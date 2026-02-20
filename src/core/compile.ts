@@ -31,8 +31,8 @@ export async function compileProject(options: CompileOptions = {}): Promise<Comp
     const compiled = await compileKnowledge({
         cwd,
         config,
-        only: options.only ?? config.only,
-        exclude: options.exclude ?? config.exclude,
+        only: options.only,
+        exclude: options.exclude,
         refresh: options.refresh,
         includeSkillsSh: options.includeSkillsSh,
     });
