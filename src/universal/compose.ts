@@ -22,6 +22,27 @@ function contentFingerprint(content: string): string {
         .digest('hex');
 }
 
+function canonicalize(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map((entry) => canonicalize(entry));
+    }
+    if (value && typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        return Object.fromEntries(
+            Object.keys(record)
+                .sort()
+                .map((key) => [key, canonicalize(record[key])])
+        );
+    }
+    return value;
+}
+
+function composedFingerprint(items: KnowledgeItem[]): string {
+    return createHash('sha256')
+        .update(JSON.stringify(canonicalize(items)), 'utf-8')
+        .digest('hex');
+}
+
 /**
  * Deterministically dedupe/sort source items and apply optional byte budget.
  */
@@ -45,6 +66,7 @@ export function composeKnowledge(
             items: ordered,
             dropped: items.length - ordered.length,
             totalBytes,
+            fingerprint: composedFingerprint(ordered),
         };
     }
 
@@ -66,5 +88,6 @@ export function composeKnowledge(
         items: selected,
         dropped,
         totalBytes,
+        fingerprint: composedFingerprint(selected),
     };
 }

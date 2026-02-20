@@ -50,7 +50,8 @@ export async function testGeneratedCode(
         }
 
         return staticValidation;
-    } catch {
+    } catch (error) {
+        console.error('Eval validation failed in testGeneratedCode:', error);
         return { build: false, lint: false, test: false };
     } finally {
         try {
@@ -69,7 +70,7 @@ function runCommand(
     timeoutMs: number = 60000
 ): Promise<{ success: boolean; output: string }> {
     return new Promise((resolve) => {
-        const child = spawn(cmd, args, { cwd });
+        const child = spawn(cmd, args, { cwd, shell: true });
         let output = '';
         let settled = false;
         let timer: NodeJS.Timeout | undefined;
@@ -194,7 +195,7 @@ async function validateSyntax(code: string, framework: string): Promise<boolean>
             compilerOptions: {
                 module: ts.ModuleKind.ESNext,
                 target: ts.ScriptTarget.ES2022,
-                jsx: isJsxFramework ? ts.JsxEmit.ReactJSX : ts.JsxEmit.Preserve,
+                jsx: isJsxFramework ? ts.JsxEmit.ReactJSX : ts.JsxEmit.None,
             },
             reportDiagnostics: true,
             fileName: isJsxFramework ? 'snippet.tsx' : 'snippet.ts',
@@ -239,7 +240,7 @@ function referencesExpectedApi(code: string, apiName: string): boolean {
 function getApiSignals(apiName: string): string[] {
     const normalizedApi = apiName.toLowerCase();
     const explicitSignals: Record<string, string[]> = {
-        'use-cache': ["'use cache'", '"use cache"', 'use cache'],
+        'use-cache': ["'use cache'", '"use cache"'],
         'cachelife': ['cachelife('],
         'cachetag': ['cachetag('],
         'async-cookies': ['cookies('],
@@ -253,6 +254,5 @@ function getApiSignals(apiName: string): string[] {
 
     return normalizedApi
         .split(/[^a-z0-9]+/)
-        .map((part) => part.trim())
         .filter((part) => part.length >= 3);
 }

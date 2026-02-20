@@ -163,6 +163,19 @@ function estimateSize(content: string): number
 function optimizeForTarget(content: string, targetSize: number): string
 ```
 
+**Format Versions (`CompressionOptions.format`)**
+
+- `v1`:
+  - Compact pipe-delimited index format.
+  - Header line shape: `[Framework Name]|root: ./docs`.
+  - Body lines use `|{section}:{file1,file2}` style groupings.
+  - Minimal metadata, optimized for small token/byte budgets.
+- `v2`:
+  - Extended pipe-delimited index format with metadata-first ordering.
+  - Preserves the same root/header conventions as `v1` for compatibility.
+  - Adds richer section metadata and deterministic field ordering to improve downstream parsing.
+  - Uses the same UTF-8 encoding and escaped newline handling as `v1`.
+
 **Output Format:**
 
 ```
@@ -377,6 +390,19 @@ interface UniversalCompileResult {
     dropped: number;               // deduped/over-budget entries
 }
 
+interface KnowledgeItem {
+    id: string;                              // Stable item identifier
+    kind: 'framework-index' | 'skills-sh-index' | 'knowledge-base-index';
+    adapter: string;                         // Producing adapter id
+    name: string;                            // Display/source name
+    content: string;                         // Rendered index payload
+    priority: number;                        // Higher values are preferred in composition
+    source?: string | null;                  // Optional original source path/uri
+    byteSize?: number;                       // Optional precomputed UTF-8 size
+    metadata?: Record<string, any>;          // Adapter-specific metadata
+    tags?: string[];                         // Optional categorical tags
+}
+
 function compileKnowledge(options?: UniversalCompileOptions): Promise<UniversalCompileResult>
 function composeKnowledge(items: KnowledgeItem[], policy?: { maxBytes?: number }): ComposeResult
 
@@ -384,6 +410,7 @@ interface ComposeResult {
     items: KnowledgeItem[];
     dropped: number;
     totalBytes: number;
+    fingerprint: string;
 }
 ```
 
@@ -403,6 +430,14 @@ interface KnowledgeBaseConfig {
     exclude?: string[];
     priority?: number;
     maxEntries?: number;
+}
+
+interface AddKnowledgeBaseOptions {
+    name?: string;                 // Override inferred knowledge-base name
+    include?: string[];            // Glob patterns to include
+    exclude?: string[];            // Glob patterns to exclude
+    priority?: number;             // Composition priority override
+    maxEntries?: number;           // Max indexed entries to include
 }
 
 function addKnowledgeBase(cwd: string, source: string, options?: AddKnowledgeBaseOptions): Promise<KnowledgeBaseConfig>
@@ -528,7 +563,7 @@ interface CompileResult {
     knowledgeBaseIndexes: string[];
     skillsShIndexes: string[];
     allIndexes: string[];
-    dropped?: number;
+    dropped: number;
 }
 
 function compileProject(options?: CompileOptions): Promise<CompileResult>
@@ -578,7 +613,7 @@ skill-compiler eval:comprehensive
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
 | `--cwd` | `-C` | Working directory |
-| `--only` | | Only these frameworks |
+| `--only` | | Limit to these frameworks |
 | `--exclude` | `-e` | Exclude these frameworks |
 | `--refresh` | `-r` | Force refresh cache |
 | `--dry-run` | `-n` | Preview only |

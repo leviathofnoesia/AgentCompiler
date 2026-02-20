@@ -1,5 +1,5 @@
 import { existsSync, createReadStream } from 'fs';
-import { stat } from 'fs/promises';
+import { stat, realpath } from 'fs/promises';
 import { glob } from 'glob';
 import { join, resolve, relative, dirname, basename, isAbsolute } from 'path';
 import { createInterface } from 'readline';
@@ -61,14 +61,21 @@ async function extractFirstHeading(filePath: string): Promise<string | undefined
 }
 
 async function collectKnowledgeEntries(cwd: string, kb: KnowledgeBaseConfig): Promise<KnowledgeEntry[]> {
-    const resolvedCwd = resolve(cwd);
     const rootPath = resolve(cwd, kb.path);
-    const relativeToCwd = relative(resolvedCwd, rootPath);
-    if (isAbsolute(relativeToCwd) || relativeToCwd.startsWith('..') || relativeToCwd === '..') {
+    if (!existsSync(rootPath)) {
         return [];
     }
 
-    if (!existsSync(rootPath)) {
+    let realCwd: string;
+    let realRoot: string;
+    try {
+        [realCwd, realRoot] = await Promise.all([realpath(cwd), realpath(rootPath)]);
+    } catch {
+        return [];
+    }
+
+    const relativeToCwd = relative(realCwd, realRoot);
+    if (isAbsolute(relativeToCwd) || relativeToCwd.startsWith('..')) {
         return [];
     }
 
@@ -76,26 +83,42 @@ async function collectKnowledgeEntries(cwd: string, kb: KnowledgeBaseConfig): Pr
     const exclude = kb.exclude || [];
 
     let fileList: string[] = [];
-    const isSingleFile = await isRegularFile(rootPath);
+    const isSingleFile = await isRegularFile(realRoot);
     if (isSingleFile) {
-        fileList = [basename(rootPath)];
+        fileList = [basename(realRoot)];
     } else {
         for (const pattern of include) {
             const matches = await glob(pattern, {
-                cwd: rootPath,
+                cwd: realRoot,
                 nodir: true,
                 ignore: exclude,
             });
-            fileList.push(...matches);
+            for (const match of matches) {
+                const resolvedMatch = resolve(realRoot, match);
+                let realMatch: string;
+                try {
+                    realMatch = await realpath(resolvedMatch);
+                } catch {
+                    continue;
+                }
+
+                const relativeMatch = relative(realRoot, realMatch);
+                if (isAbsolute(relativeMatch) || relativeMatch.startsWith('..')) {
+                    continue;
+                }
+
+                fileList.push(normalizePath(relativeMatch));
+            }
         }
     }
 
     const uniqueSortedFiles = Array.from(new Set(fileList))
         .map((item) => normalizePath(item))
         .sort((a, b) => a.localeCompare(b));
-    const entries = await Promise.all(uniqueSortedFiles.map(async (file) => {
-        const fullPath = isSingleFile ? rootPath : join(rootPath, file);
-        const relativePath = normalizePath(relative(rootPath, fullPath)) || basename(fullPath);
+    const limitedFiles = uniqueSortedFiles.slice(0, kb.maxEntries ?? 80);
+    const entries = await Promise.all(limitedFiles.map(async (file) => {
+        const fullPath = isSingleFile ? realRoot : join(realRoot, file);
+        const relativePath = normalizePath(relative(realRoot, fullPath)) || basename(fullPath);
         return {
             relativePath,
             title: await extractFirstHeading(fullPath),

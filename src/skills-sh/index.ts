@@ -9,6 +9,7 @@ import { existsSync } from 'fs';
 import { join, basename } from 'path';
 import { parse as parseYaml } from 'yaml';
 import chalk from 'chalk';
+import stripAnsiLib from 'strip-ansi';
 
 const SKILLS_DIR = '.agent/skills';
 
@@ -316,7 +317,7 @@ function runNpxCommand(
 
     return new Promise((resolve) => {
         const child = spawn('npx', ['-y', ...args], {
-            shell: true,
+            shell: process.platform === 'win32',
             stdio: 'pipe',
         });
 
@@ -450,10 +451,7 @@ function filterCuratedSkills(query: string): SearchResult[] {
 }
 
 function stripAnsi(input: string): string {
-    return input.replace(
-        /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g,
-        ''
-    );
+    return stripAnsiLib(input);
 }
 
 /**

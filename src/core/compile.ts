@@ -22,7 +22,7 @@ export interface CompileResult {
     knowledgeBaseIndexes: string[];
     skillsShIndexes: string[];
     allIndexes: string[];
-    dropped?: number;
+    dropped: number;
 }
 
 export async function compileProject(options: CompileOptions = {}): Promise<CompileResult> {

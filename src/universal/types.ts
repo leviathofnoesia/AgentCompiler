@@ -46,4 +46,5 @@ export interface ComposeResult {
     items: KnowledgeItem[];
     dropped: number;
     totalBytes: number;
+    fingerprint: string;
 }
