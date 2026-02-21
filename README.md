@@ -1,315 +1,41 @@
-# AgentCompiler (skill-compiler)
+# AgentCompiler
 
-> Universal tool for injecting framework docs, skills, and local knowledge bases into compressed AGENTS.md indexes
+## Project Structure Update (Important)
 
-[![npm version](https://badge.fury.io/js/skill-compiler.svg)](https://www.npmjs.com/package/skill-compiler)
-[![GitHub](https://img.shields.io/github/license/leviathofnoesia/AgentCompiler)](https://github.com/leviathofnoesia/AgentCompiler)
-[![API](https://img.shields.io/badge/REST_API-Live-blue)](https://github.com/leviathofnoesia/agentcompiler-api)
+AgentCompiler is moving to a clearer open/public + hosted/private model.
 
-## 📖 Background
+### Repositories
+- **AgentCompiler (this repo):** public docs, SDK examples, and integration guides
+- **AgentCompiler API:** managed hosted product and production operations
+- **AgentCompiler Skill:** installable skill package for skills.sh and ClawHub
 
-This project is inspired by and based on **Vercel's groundbreaking research**: [AGENTS.md outperforms skills in our agent evals](https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals).
+### What this means
+- This repo remains public and useful for integration.
+- Production-grade API internals, billing, and platform reliability features are now maintained in the hosted product codebase.
+- Public users still get full API documentation and SDK examples; hosted usage remains the recommended path for production workloads.
 
-### Key Findings from Vercel's Study
+If you’re integrating today, start here:
+- Docs: `/docs`
+- API reference: `/openapi/openapi.yaml`
+- Skill install: see `agentcompiler-api-skill` repo
 
-| Configuration | Pass Rate |
-|--------------|-----------|
-| Baseline (no docs) | 53% |
-| Skills (default) | 53% |
-| Skills with instructions | 79% |
-| **AGENTS.md docs index** | **100%** |
+## Hosted API Required
 
-**Why passive context wins:**
-1. **No decision point** - Agents don't need to decide "should I look this up?"
-2. **Consistent availability** - Content is in system prompt for every turn
-3. **No ordering issues** - Avoids sequencing decisions (read docs first vs explore first)
+The managed AgentCompiler API is the supported production path.
 
-This tool automates the process of generating these compressed doc indexes for any project.
+- Production base URL: `https://agentcompilerapi.up.railway.app`
+- Dashboard: `https://agentcompilerapi.up.railway.app/dashboard/`
+- Agent view: `https://agentcompilerapi.up.railway.app/agent.html`
 
-## 🚀 Quick Start
+## Quick Links
 
-```bash
-# In your project directory
-npx skill-compiler
-```
+- Integration docs: [`docs/INTEGRATION.md`](docs/INTEGRATION.md)
+- SDK examples: [`sdk/examples`](sdk/examples)
+- API schema: [`openapi/openapi.yaml`](openapi/openapi.yaml)
+- Skill repo: `https://github.com/leviathofnoesia/agentcompiler-api-skill`
 
-This will:
-1. 🔍 Detect frameworks from your `package.json`
-2. 📥 Download version-matched documentation
-3. 📚 Include installed `skills.sh` skills and configured local knowledge bases
-4. 📦 Compose deterministic indexes
-5. ✅ Generate/update your `AGENTS.md`
+## OSS Baseline
 
-## Usage
+Historical open-source backbone snapshot is tagged at:
 
-```bash
-# One-time generation
-npx skill-compiler
-
-# Watch mode (auto-update on dependency changes)
-npx skill-compiler watch
-
-# Preview without writing
-npx skill-compiler --dry-run
-
-# Only specific frameworks
-npx skill-compiler --only nextjs,react
-
-# Force refresh cached docs
-npx skill-compiler --refresh
-
-# Add custom skill
-npx skill-compiler add ./my-skill-docs/
-
-# Add local knowledge base
-npx skill-compiler kb-add ./docs/internal --name internal-docs
-
-# List/remove knowledge bases
-npx skill-compiler kb-list
-npx skill-compiler kb-remove internal-docs
-
-# Run evaluation suite
-npx skill-compiler eval
-
-# Run comprehensive evaluation with LLM integration
-npx skill-compiler eval:comprehensive
-
-# Run evaluation with specific provider
-npx skill-compiler eval --provider anthropic --api-key sk-ant-...
-```
-
-## Universal Sources
-
-`skill-compiler` is now a universal **tool pipeline** that can compose multiple knowledge sources into one managed AGENTS.md section:
-
-- Framework docs (detected + fetched + compressed)
-- Installed `skills.sh` skills
-- Local project knowledge bases (`kb-add` / `.skill-compiler.json`)
-
-Composition is deterministic (stable ordering + dedupe), which keeps `--check` and CI output consistent.
-
-## LLM Integration
-
-AgentCompiler now supports real LLM integration for comprehensive evaluation:
-
-### Supported Providers
-| Provider | Models | API Key Requirement |
-|----------|--------|-------------------|
-| OpenAI | gpt-4o, gpt-4-turbo, gpt-4 | Yes (OPENAI_API_KEY) |
-| Anthropic | claude-3.5-sonnet, claude-3.5-haiku | Yes (ANTHROPIC_API_KEY) |
-| Google | gemini-1.5-pro, gemini-1.5-flash | Yes (GOOGLE_API_KEY) |
-| Mistral | mistral-large, mistral-small, mistral-medium | Yes (MISTRAL_API_KEY) |
-| Ollama | llama3.1, mistral, codellama, gemma2 | No |
-| Groq | llama-3.1-70b-versatile, mixtral-8x7b | Yes (GROQ_API_KEY) |
-| Perplexity | llama-3.1-sonar-large-128k | Yes (PERPLEXITY_API_KEY) |
-
-### Usage Examples
-```bash
-# OpenAI (default)
-npx skill-compiler eval --framework nextjs --api-key sk-...
-
-# Anthropic Claude
-npx skill-compiler eval --framework nextjs --provider anthropic --api-key sk-ant-...
-
-# Local Ollama (no API key needed)
-npx skill-compiler eval --framework nextjs --provider ollama --model llama3
-
-# Google Gemini
-npx skill-compiler eval --framework nextjs --provider google --api-key sk-...
-
-# Mistral AI
-npx skill-compiler eval --framework nextjs --provider mistral --api-key sk-...
-```
-
-## Supported Frameworks
-
-### JavaScript/TypeScript
-| Framework | Package Match |
-|-----------|--------------|
-| Next.js | `next` |
-| React | `react` |
-| Vue.js | `vue` |
-| Astro | `astro` |
-| SvelteKit | `@sveltejs/kit` |
-| Supabase | `@supabase/supabase-js` |
-| Tailwind CSS | `tailwindcss` |
-| Prisma | `prisma`, `@prisma/client` |
-| Drizzle ORM | `drizzle-orm` |
-| tRPC | `@trpc/server`, `@trpc/client` |
-| Zod | `zod` |
-| TanStack Query | `@tanstack/react-query` |
-| Nuxt | `nuxt` |
-| Remix | `@remix-run/react` |
-| Hono | `hono` |
-| Effect | `effect` |
-| Bun | `bun` |
-| Express.js | `express` |
-| NestJS | `@nestjs/core` |
-| Fastify | `fastify` |
-| Svelte | `svelte` |
-| Solid | `solid-js` |
-| Qwik | `@builder.io/qwik` |
-
-### Python
-| Framework | Package Match |
-|-----------|--------------|
-| Django | `django` |
-| FastAPI | `fastapi` |
-| Flask | `flask` |
-
-### Go
-| Framework | Package Match |
-|-----------|--------------|
-| Gin | `github.com/gin-gonic/gin` |
-| Echo | `github.com/labstack/echo/v4` |
-| Fiber | `github.com/gofiber/fiber/v2` |
-
-## Generated Output
-
-The tool generates a managed section in your `AGENTS.md`:
-
-```markdown
-<!-- BEGIN SKILL-COMPILER MANAGED SECTION -->
-
-## Framework Documentation Indexes
-
-[Next.js Docs Index]|root: ./.agent-docs/nextjs
-|IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for Next.js tasks.
-|01-app\01-getting-started:{01-installation.mdx,02-project-structure.mdx,...}
-|...
-
-[internal-docs Knowledge Base]|root: ./docs/internal
-|IMPORTANT: Treat this as project-specific source of truth for internal-docs.
-|{root}:{api.md,runbooks.md}
-|guides:{deploy.md,oncall.md}
-
-<!-- END SKILL-COMPILER MANAGED SECTION -->
-```
-
-Your existing AGENTS.md content is preserved—only the managed section is updated.
-
-## Evaluation Suite
-
-Run Vercel-methodology evals to verify improvements:
-
-```bash
-npx skill-compiler eval
-```
-
-Outputs Build, Lint, Test, and Pass Rate metrics comparing baseline vs AGENTS.md configurations.
-
-## How It Works
-
-`skill-compiler` now runs a universal pipeline:
-
-1. **Adapters** - Collect indexes from framework docs, installed skills.sh skills, and local knowledge bases
-2. **Normalize** - Convert all sources into one internal knowledge item format
-3. **Compose** - Deterministically dedupe/order entries (with optional byte-budget dropping)
-4. **Render** - Emit compact pipe-delimited index blocks
-5. **Inject** - Merge managed section into AGENTS.md while preserving user content
-
-## REST API
-
-Need an API instead of a CLI? Check out the [AgentCompiler API](https://github.com/leviathofnoesia/agentcompiler-api) - a RESTful API that provides the same functionality via HTTP endpoints, with x402 payment support for autonomous agents.
-
-**Features:**
-- Compile framework docs on demand
-- x402 payments (autonomous agents can pay themselves!)
-- Rate-limited free tier (10 requests/day)
-- Scan endpoints for framework detection
-
-**Quick Start:**
-```bash
-# Register and get API key
-curl -X POST https://api.agentcompiler.com/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My App", "email": "me@example.com"}'
-
-# Compile a project
-curl -X POST https://api.agentcompiler.com/api/v1/compile \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -d '{"packageJson": "{\"dependencies\":{\"next\":\"14.0.0\"}}"}'
-```
-
-Perfect for integrating agent documentation compilation into your workflows!
-
-## Configuration
-
-Create `.skill-compiler.json` to customize behavior:
-
-```json
-{
-  "out": "./AGENTS.md",
-  "only": ["nextjs", "react"],
-  "sources": {
-    "frameworkDocs": true,
-    "skillsSh": true,
-    "knowledgeBases": true
-  },
-  "knowledgeBases": [
-    {
-      "name": "internal-docs",
-      "path": "docs/internal",
-      "include": ["**/*.md", "**/*.mdx"],
-      "exclude": ["archive/**"],
-      "priority": 85,
-      "maxEntries": 100
-    }
-  ],
-  "conflicts": {
-    "hooks/*": "prefer:react"
-  }
-}
-```
-
-## Background Automation
-
-### npm postinstall
-```json
-{
-  "scripts": {
-    "postinstall": "skill-compiler --silent"
-  }
-}
-```
-
-### Watch mode with dev server
-```json
-{
-  "scripts": {
-    "dev": "concurrently 'next dev' 'skill-compiler watch'"
-  }
-}
-```
-
-### Git pre-commit hook
-```bash
-# .husky/pre-commit
-npx skill-compiler --check || exit 1
-```
-
-## 🙏 Acknowledgments
-
-This project would not exist without the research and insights from:
-
-- **[Vercel](https://vercel.com)** - For their comprehensive research on AGENTS.md vs skills, published in [this blog post](https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals)
-- **[Jude Gao](https://twitter.com/gao_jude)** - Research and evals at Vercel
-- **[Next.js Team](https://nextjs.org)** - For the `@next/codemod agents-md` implementation that inspired the compression format
-- **[AGENTS.md Standard](https://agents.md/)** - For establishing the convention for agent context files
-- **[Agent Skills](https://agentskills.io/)** - For the skills standard that drove the comparative research
-
-## 🤝 Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Ways to contribute:
-- Add new framework registries
-- Improve compression algorithms
-- Enhance the eval suite with LLM integration
-- Report bugs and suggest features
-- Improve documentation
-
-## 📄 License
-
-MIT
+- `v1-oss-freeze`

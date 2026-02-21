@@ -1,0 +1,31 @@
+openapi: 3.0.3
+info:
+  title: AgentCompiler API
+  version: 1.0.0
+servers:
+  - url: https://agentcompilerapi.up.railway.app
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /api/v1/auth/register:
+    post:
+      summary: Register user and issue API key
+      responses:
+        '200':
+          description: Registered
+  /api/v1/compile:
+    post:
+      summary: Compile framework docs into AGENTS.md index
+      responses:
+        '200':
+          description: Compiled
+  /api/v1/compile/scan:
+    post:
+      summary: Scan project dependencies for supported frameworks
+      responses:
+        '200':
+          description: Scanned

@@ -1,8 +1,0 @@
-{
-  "out": "./AGENTS.md",
-  "compression": {
-    "targetSize": 8192,
-    "format": "v1"
-  },
-  "cacheTtlHours": 168
-}
