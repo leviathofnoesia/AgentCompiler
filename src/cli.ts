@@ -11,11 +11,13 @@ import { watchProject } from './watcher/index.js';
 import { loadConfig, saveConfig, configExists, createInitialConfig } from './config/index.js';
 import { addCustomSkill, listCustomSkills, removeCustomSkill } from './custom/index.js';
 import { compileProject } from './core/compile.js';
+import { scanProject } from './scanner/index.js';
 import {
     searchSkills,
     installSkill,
     uninstallSkill,
     scanLocalSkills,
+    syncSkillsToAgentsMd,
     getSuggestedSkills
 } from './skills-sh/index.js';
 import { runEval, runComprehensiveEval, getCompressionStats, printDetailedResults, generateEvalReport, type EvalOptions } from './eval/index.js';
@@ -25,7 +27,7 @@ const program = new Command();
 program
     .name('skill-compiler')
     .description('Converts skill/framework documentation into compressed AGENTS.md indexes')
-    .version('0.3.0');
+    .version('0.3.1');
 
 // ============================================================================
 // INIT COMMAND
@@ -546,3 +548,4 @@ program
     });
 
 program.parse();
+

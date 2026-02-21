@@ -10,9 +10,11 @@ import { spawn } from 'child_process';
 import chalk from 'chalk';
 import { scanProject } from '../scanner/index.js';
 import { compressIndex } from '../compressor/index.js';
+import { fetchDocs } from '../fetcher/index.js';
 import type { DetectedSkill } from '../scanner/index.js';
-import { loadConfig } from '../config/index.js';
 import { compileProject } from '../core/compile.js';
+import { loadConfig } from '../config/index.js';
+import { getRegistry } from '../registries/index.js';
 import { createLLMClient, testLLMConnection } from '../llm/client.js';
 import { type LLMConfig } from '../llm/index.js';
 import { testGeneratedCode } from './utils.js';
@@ -241,15 +243,11 @@ export async function runEval(options: EvalOptions = {}): Promise<EvalResult> {
     console.log(chalk.gray(`Timeout: ${timeout}s`));
 
     if (config === 'agents-md' && refreshIndexes) {
-        const configData = await loadConfig(cwd);
         await compileProject({
             cwd,
-            outPath: configData.out || './AGENTS.md',
             only: framework ? [framework] : undefined,
             refresh: true,
-            dryRun: true,
             includeSkillsSh: false,
-            silent: !verbose,
         });
     }
 
@@ -259,7 +257,6 @@ export async function runEval(options: EvalOptions = {}): Promise<EvalResult> {
     let total = 0;
 
     const tasks = TEST_TASKS[framework as keyof typeof TEST_TASKS] || [];
-    const cwd = process.cwd();
     const detectedSkill = config === 'agents-md' ? await resolveEvalSkill(framework, cwd) : undefined;
 
     if (detectedSkill && config === 'agents-md') {
@@ -565,3 +562,4 @@ export function printDetailedResults(results: EvalResult[]): void {
 
     console.log(chalk.bold('└───────────────────────────────────────────────────────────┘'));
 }
+

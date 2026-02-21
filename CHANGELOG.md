@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-02-21
+
+### Fixed
+- Added an explicit files allowlist so npm publishes always include compiled dist/ artifacts.
+- Added prepare script so git/tarball installs build before consumption.
+- Bumped patch version to ensure downstream projects can actually pull updated package contents.
+
+---
 ## [0.3.0] - 2026-01-29
 
 ### Added
@@ -71,3 +79,4 @@ All notable changes to this project will be documented in this file.
 - Next.js, React, Vue.js, Astro, SvelteKit
 - Supabase, Tailwind CSS, Prisma, Drizzle ORM
 - tRPC, Zod, TanStack Query
+
