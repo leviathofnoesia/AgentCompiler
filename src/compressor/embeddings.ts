@@ -109,7 +109,9 @@ export class SectionEmbedder {
                 if (pkg.scripts) {
                     texts.push(Object.values(pkg.scripts).join(' '));
                 }
-            } catch {}
+            } catch (e) {
+                console.warn(`Warning: Could not read ${packageJsonPath}: ${e instanceof Error ? e.message : e}`);
+            }
         }
 
         const configFiles = [
@@ -123,7 +125,9 @@ export class SectionEmbedder {
             if (existsSync(cfgPath)) {
                 try {
                     texts.push(await readFile(cfgPath, 'utf-8'));
-                } catch {}
+                } catch (e) {
+                    console.warn(`Warning: Could not read ${cfgPath}: ${e instanceof Error ? e.message : e}`);
+                }
             }
         }
 
@@ -281,52 +285,9 @@ export class SectionEmbedder {
     }
 
     private async embedTextONNX(text: string): Promise<Float32Array> {
-        if (!this.onnxInferenceSession || !this.onnxRuntime) {
-            return this.tfidfVectorizer.transform(this.tfidfVectorizer.tokenize(text));
-        }
-
-        try {
-            const { Tensor } = this.onnxRuntime;
-
-            const tokens = text.toLowerCase().split(/\s+/).slice(0, 512);
-            const inputIds = new BigInt64Array(tokens.length);
-            for (let i = 0; i < tokens.length; i++) {
-                inputIds[i] = BigInt(i + 1);
-            }
-
-            const feeds = {
-                input_ids: new Tensor('int64', inputIds, [1, tokens.length]),
-                attention_mask: new Tensor('int64', new BigInt64Array(tokens.length).fill(1n), [1, tokens.length]),
-            };
-
-            const results = await this.onnxInferenceSession.run(feeds);
-            const output = results['last_hidden_state'] || results['sentence_embedding'];
-
-            if (output) {
-                const data = output.data as Float32Array;
-                const dim = output.dims[output.dims.length - 1];
-                const result = new Float32Array(dim);
-
-                for (let i = 0; i < dim; i++) {
-                    let sum = 0;
-                    const tokenCount = output.dims[1] || 1;
-                    for (let t = 0; t < tokenCount; t++) {
-                        sum += data[t * dim + i];
-                    }
-                    result[i] = sum / tokenCount;
-                }
-
-                let norm = 0;
-                for (let i = 0; i < dim; i++) norm += result[i] * result[i];
-                norm = Math.sqrt(norm);
-                if (norm > 1e-10) {
-                    for (let i = 0; i < dim; i++) result[i] /= norm;
-                }
-
-                return result;
-            }
-        } catch {}
-
+        // TODO: ONNX inference disabled — requires a real tokenizer (BPE/WordPiece)
+        // to produce correct vocabulary IDs. Sequential integers as input_ids produce
+        // garbage embeddings. Re-enable once tokenizers dependency is integrated.
         return this.tfidfVectorizer.transform(this.tfidfVectorizer.tokenize(text));
     }
 }
@@ -448,8 +409,8 @@ function murmurHash3(str: string, seed: number): number {
     let k1 = 0;
     const tailStart = nblocks * 4;
     switch (len & 3) {
-        case 3: k1 ^= (str.charCodeAt(tailStart + 2) & 0xff) << 16;
-        case 2: k1 ^= (str.charCodeAt(tailStart + 1) & 0xff) << 8;
+        case 3: k1 ^= (str.charCodeAt(tailStart + 2) & 0xff) << 16; /* fall through */
+        case 2: k1 ^= (str.charCodeAt(tailStart + 1) & 0xff) << 8; /* fall through */
         case 1:
             k1 ^= str.charCodeAt(tailStart) & 0xff;
             k1 = Math.imul(k1, C1);

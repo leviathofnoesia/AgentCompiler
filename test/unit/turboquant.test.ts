@@ -6,7 +6,7 @@ function generateRandomVectors(count: number, dim: number, seed: number = 42): F
     let state = seed;
     const next = () => {
         state ^= state << 13;
-        state ^= state >> 17;
+        state ^= state >>> 17;
         state ^= state << 5;
         return (state >>> 0) / 4294967296;
     };
@@ -148,5 +148,22 @@ describe('TurboQuant', () => {
 
         const reconstructed = tq.decompress(compressed);
         expect(reconstructed.length).toBe(5);
+    });
+
+    it('should handle non-byte-aligned bit widths (3-bit)', () => {
+        const tq = new TurboQuantMSE({ numBits: 3 });
+        const vectors = generateRandomVectors(10, 32);
+        const compressed = tq.compress(vectors, 32);
+
+        expect(compressed.numBits).toBe(3);
+        expect(compressed.codebook.length).toBe(8);
+
+        const reconstructed = tq.decompress(compressed);
+        expect(reconstructed.length).toBe(10);
+        expect(reconstructed[0].length).toBe(32);
+
+        const { mse, cosinePreservation } = estimateDistortion(vectors, reconstructed);
+        expect(mse).toBeLessThan(1);
+        expect(cosinePreservation).toBeGreaterThan(0.3);
     });
 });

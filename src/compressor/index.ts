@@ -8,7 +8,7 @@ import { readdir, stat, readFile } from 'fs/promises';
 import { join, relative, basename, extname } from 'path';
 import type { DetectedSkill } from '../scanner/index.js';
 import { getRegistry } from '../registries/index.js';
-import { loadConfig, type ConflictConfig } from '../config/index.js';
+import { loadConfig, type ConflictConfig, type SkillCompilerConfig } from '../config/index.js';
 import { SectionRanker, type RankedSection, type RankingResult } from './ranker.js';
 
 const DEFAULT_TARGET_SIZE_BYTES = 8 * 1024;
@@ -44,7 +44,7 @@ export async function compressIndex(skill: DetectedSkill, options?: CompressionO
     const rootLabel = normalizeRootLabel(relative(cwd, cacheDir));
 
     if (format === 'v3') {
-        return compressIndexV3(skill, cacheDir, cwd, rootLabel, targetSize, conflicts);
+        return compressIndexV3(skill, cacheDir, cwd, rootLabel, targetSize, conflicts, config);
     }
 
     const tree = await buildFileTree(cacheDir, format === 'v2');
@@ -72,13 +72,18 @@ async function compressIndexV3(
     cwd: string,
     rootLabel: string,
     targetSize: number,
-    conflicts: ConflictConfig | undefined
+    conflicts: ConflictConfig | undefined,
+    config: SkillCompilerConfig
 ): Promise<string> {
     const registry = getRegistry(skill.name);
     const preferredPatterns = getPreferredPatterns(conflicts, skill.name);
     const filteredDir = applyConflictFiltersToPath(cacheDir, conflicts, skill.name);
 
-    const ranker = new SectionRanker({ targetSizeBytes: targetSize });
+    const ranker = new SectionRanker({
+        targetSizeBytes: targetSize,
+        semanticRanking: config.compression?.semanticRanking,
+        embeddingModel: config.compression?.embeddingModel,
+    });
     const ranking = await ranker.rankSections(filteredDir || cacheDir, cwd, skill.name);
 
     if (ranking.sections.length === 0) {
@@ -93,9 +98,18 @@ async function compressIndexV3(
         const excludedPatterns = Object.entries(conflicts)
             .filter(([, value]) => value.startsWith('prefer:') && value.slice('prefer:'.length).trim() !== skill.name)
             .map(([pattern]) => pattern);
+        const docsPrefix = `.agent-docs/${skill.name}/`;
         ranking.sections = ranking.sections.filter(section => {
-            const matchPath = section.path.toLowerCase();
-            return !excludedPatterns.some(pattern => matchesGlob(pattern, matchPath));
+            let matchPath = section.path.toLowerCase();
+            if (matchPath.startsWith(docsPrefix)) {
+                matchPath = matchPath.slice(docsPrefix.length);
+            } else if (matchPath.startsWith('.agent-docs\\')) {
+                const winPrefix = `.agent-docs\\${skill.name}\\`;
+                if (matchPath.startsWith(winPrefix)) {
+                    matchPath = matchPath.slice(winPrefix.length);
+                }
+            }
+            return !excludedPatterns.some(pattern => matchesGlob(pattern.toLowerCase(), matchPath));
         });
     }
 
@@ -120,6 +134,11 @@ async function compressIndexV3(
 }
 
 function matchesGlob(pattern: string, target: string): boolean {
+    if (pattern.length > 256) return false;
+    const wildcardCount = (pattern.match(/[*?]/g) || []).length;
+    if (wildcardCount > 32) return false;
+    if (/(?:\*\*[\*/]+\*\*)|(?:\*(?:\.\*){3,})/.test(pattern)) return false;
+
     const escaped = pattern
         .replace(/[.+^${}()|[\]\\]/g, '\\$&')
         .replace(/\*\*/g, '::DOUBLESTAR::')
@@ -129,11 +148,14 @@ function matchesGlob(pattern: string, target: string): boolean {
     return new RegExp(`^${escaped}$`).test(target);
 }
 
+// TODO: implement directory-level conflict filtering by scanning .agent-docs/<skill>/
+// and returning a filtered temp directory or filtered file list. Currently conflicts
+// are applied post-ranking via glob matching on section paths instead.
 function applyConflictFiltersToPath(
     _cacheDir: string,
     _conflicts: ConflictConfig | undefined,
     _skillName: string
-): string | null {
+): null {
     return null;
 }
 

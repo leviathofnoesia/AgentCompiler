@@ -12,9 +12,9 @@
  * 5. Allocate token budget proportionally to relevance scores
  */
 
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join, relative, basename, extname } from 'path';
+import { join } from 'path';
 import { SectionEmbedder, type SectionEmbedding, type EmbeddingIndex } from './embeddings.js';
 import { TurboQuantMSE } from './turboquant.js';
 
@@ -41,6 +41,8 @@ export interface RankingOptions {
     criticalPatterns: string[];
     minSections: number;
     boostCritical: number;
+    semanticRanking?: boolean;
+    embeddingModel?: string;
 }
 
 const DEFAULT_OPTIONS: RankingOptions = {
@@ -104,21 +106,25 @@ export class SectionRanker {
         let embeddingIndex: EmbeddingIndex | null = null;
 
         const cachedIndex = await this.embedder.loadIndex(cacheDir);
-        if (cachedIndex) {
-            embeddingIndex = cachedIndex;
-            sections = await this.embedder.embedSections(docsDir, rootDir);
+        sections = await this.embedder.embedSections(docsDir, rootDir);
 
-            if (sections.length > 0 && cachedIndex.sections.length === sections.length) {
-                const tq = new TurboQuantMSE({ numBits: 4, seed: 42 });
-                const reconstructed = tq.decompress(cachedIndex.compressed);
-                for (let i = 0; i < sections.length; i++) {
-                    sections[i].vector = reconstructed[i];
-                }
+        let cacheHit = false;
+        if (cachedIndex && sections.length > 0 && cachedIndex.sections.length === sections.length) {
+            cacheHit = sections.every((s, i) =>
+                s.path === cachedIndex.sections[i].path && s.name === cachedIndex.sections[i].name
+            );
+        }
+
+        if (cacheHit && cachedIndex) {
+            embeddingIndex = cachedIndex;
+            const tq = new TurboQuantMSE({ numBits: 4, seed: 42 });
+            const reconstructed = tq.decompress(cachedIndex.compressed);
+            for (let i = 0; i < sections.length; i++) {
+                sections[i].vector = reconstructed[i];
             }
         } else {
-            sections = await this.embedder.embedSections(docsDir, rootDir);
-
             if (sections.length > 0) {
+                this.embedWithTFIDFInline(sections);
                 embeddingIndex = this.embedder.buildIndex(sections);
                 if (embeddingIndex) {
                     try {
@@ -265,6 +271,16 @@ export class SectionRanker {
         }
 
         return result;
+    }
+
+    private embedWithTFIDFInline(sections: SectionEmbedding[]): void {
+        const allTokens = sections.map(s =>
+            (this.embedder as any).tfidfVectorizer.tokenize(s.content)
+        );
+        (this.embedder as any).tfidfVectorizer.fit(allTokens);
+        for (let i = 0; i < sections.length; i++) {
+            sections[i].vector = (this.embedder as any).tfidfVectorizer.transform(allTokens[i]);
+        }
     }
 
     private embedProjectFallback(frameworkName: string): Float32Array {

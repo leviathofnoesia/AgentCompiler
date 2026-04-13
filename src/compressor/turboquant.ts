@@ -15,7 +15,6 @@
 export interface TurboQuantConfig {
     numBits?: number;
     seed?: number;
-    codebookSize?: number;
 }
 
 export interface CompressedVectors {
@@ -28,20 +27,20 @@ export interface CompressedVectors {
     numBits: number;
 }
 
-const DEFAULT_CONFIG: Required<TurboQuantConfig> = {
+const DEFAULT_CONFIG = {
     numBits: 4,
     seed: 42,
-    codebookSize: 16,
 };
 
 export class TurboQuantMSE {
-    private config: Required<TurboQuantConfig>;
+    private codebookSize: number;
+    private numBits: number;
     private rng: SeededRNG;
 
     constructor(config: TurboQuantConfig = {}) {
-        this.config = { ...DEFAULT_CONFIG, ...config };
-        this.config.codebookSize = 1 << this.config.numBits;
-        this.rng = new SeededRNG(this.config.seed);
+        this.numBits = config.numBits ?? DEFAULT_CONFIG.numBits;
+        this.codebookSize = 1 << this.numBits;
+        this.rng = new SeededRNG(config.seed ?? DEFAULT_CONFIG.seed);
     }
 
     compress(vectors: Float32Array[], dimensions: number): CompressedVectors {
@@ -74,7 +73,7 @@ export class TurboQuantMSE {
 
         const codebook = this.computeLloydMaxCodebook(rotated, dim);
 
-        const bitsPerValue = this.config.numBits;
+        const bitsPerValue = this.numBits;
         const valuesPerByte = 8 / bitsPerValue;
         const totalValues = count * dim;
         const packedSize = Math.ceil(totalValues / valuesPerByte);
@@ -125,14 +124,19 @@ export class TurboQuantMSE {
             rotated[i] = new Float32Array(dim);
         }
 
-        let bitIndex = 0;
+        let byteIndex = 0;
+        let bitsLeft = 0;
+        let bitBuffer = 0;
+
         for (let i = 0; i < count; i++) {
             for (let j = 0; j < dim; j++) {
-                const byteIndex = Math.floor(bitIndex / 8);
-                const bitOffset = 8 - numBits - (bitIndex % 8);
-                const code = (quantized[byteIndex] >> bitOffset) & mask;
-                rotated[i][j] = codebook[code];
-                bitIndex += numBits;
+                while (bitsLeft < numBits) {
+                    bitBuffer = (bitBuffer << 8) | (byteIndex < quantized.length ? quantized[byteIndex++] : 0);
+                    bitsLeft += 8;
+                }
+                bitsLeft -= numBits;
+                rotated[i][j] = codebook[(bitBuffer >> bitsLeft) & mask];
+                bitBuffer &= (1 << bitsLeft) - 1;
             }
         }
 
@@ -178,16 +182,20 @@ export class TurboQuantMSE {
         const scores: { index: number; score: number }[] = [];
 
         const mask = (1 << numBits) - 1;
-        let bitIndex = 0;
+        let byteIndex = 0;
+        let bitsLeft = 0;
+        let bitBuffer = 0;
 
         for (let i = 0; i < count; i++) {
             let dotProduct = 0;
             for (let j = 0; j < dim; j++) {
-                const byteIndex = Math.floor(bitIndex / 8);
-                const bitOffset = 8 - numBits - (bitIndex % 8);
-                const code = (compressed.quantized[byteIndex] >> bitOffset) & mask;
-                dotProduct += quantizedQuery[j] * codebook[code];
-                bitIndex += numBits;
+                while (bitsLeft < numBits) {
+                    bitBuffer = (bitBuffer << 8) | (byteIndex < compressed.quantized.length ? compressed.quantized[byteIndex++] : 0);
+                    bitsLeft += 8;
+                }
+                bitsLeft -= numBits;
+                dotProduct += quantizedQuery[j] * codebook[(bitBuffer >> bitsLeft) & mask];
+                bitBuffer &= (1 << bitsLeft) - 1;
             }
 
             const score = dotProduct * norms[i] * queryNorm;
@@ -256,7 +264,7 @@ export class TurboQuantMSE {
         rotatedVectors: Float32Array[],
         dim: number
     ): Float32Array {
-        const K = this.config.codebookSize;
+        const K = this.codebookSize;
 
         let allMin = Infinity, allMax = -Infinity;
         for (const vec of rotatedVectors) {
@@ -333,7 +341,7 @@ class SeededRNG {
 
     next(): number {
         this.state ^= this.state << 13;
-        this.state ^= this.state >> 17;
+        this.state ^= this.state >>> 17;
         this.state ^= this.state << 5;
         return (this.state >>> 0) / 4294967296;
     }
