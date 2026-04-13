@@ -16,7 +16,14 @@ describe('E2E Workflow', () => {
 
   afterEach(() => {
     if (existsSync(testDir)) {
-      rmSync(testDir, { recursive: true, force: true });
+      try {
+        rmSync(testDir, { recursive: true, force: true });
+      } catch {
+        // Windows EPERM: child process may still hold files briefly after kill
+        setTimeout(() => {
+          try { rmSync(testDir, { recursive: true, force: true }); } catch {}
+        }, 500);
+      }
     }
   });
 
@@ -24,7 +31,7 @@ describe('E2E Workflow', () => {
     // 1. Initialize
     const cliPath = join(__dirname, '../../dist/cli.js');
     const initResult = await new Promise((resolve) => {
-      exec(`node ${cliPath} init`, { cwd: testDir }, (error, stdout, stderr) => {
+      exec(`node "${cliPath}" init`, { cwd: testDir }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });
@@ -45,7 +52,7 @@ describe('E2E Workflow', () => {
 
     // 3. Compile
     const compileResult = await new Promise((resolve) => {
-      exec(`node ${cliPath} compile`, { cwd: testDir }, (error, stdout, stderr) => {
+      exec(`node "${cliPath}" compile`, { cwd: testDir }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });
@@ -65,7 +72,7 @@ describe('E2E Workflow', () => {
     // Initialize
     const cliPath = join(__dirname, '../../dist/cli.js');
     await new Promise((resolve) => {
-      exec(`node ${cliPath} init`, { cwd: testDir }, () => resolve(null));
+      exec(`node "${cliPath}" init`, { cwd: testDir }, () => resolve(null));
     });
 
     // Add multiple frameworks
@@ -82,7 +89,7 @@ describe('E2E Workflow', () => {
 
     // Compile
     const compileResult = await new Promise((resolve) => {
-      exec(`node ${cliPath} compile`, { cwd: testDir }, (error, stdout, stderr) => {
+      exec(`node "${cliPath}" compile`, { cwd: testDir }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });
@@ -99,7 +106,7 @@ describe('E2E Workflow', () => {
     // Initialize
     const cliPath = join(__dirname, '../../dist/cli.js');
     await new Promise((resolve) => {
-      exec(`node ${cliPath} init`, { cwd: testDir }, () => resolve(null));
+      exec(`node "${cliPath}" init`, { cwd: testDir }, () => resolve(null));
     });
 
     // Add Next.js
@@ -116,8 +123,7 @@ describe('E2E Workflow', () => {
     // Start watch (this would normally run in background)
     // For testing, we'll just verify it can be started
     const watchResult = await new Promise((resolve) => {
-      // We use a timeout to kill the watch process since it runs forever
-      const child = exec(`node ${cliPath} watch`, { cwd: testDir });
+      const child = exec(`node "${cliPath}" watch`, { cwd: testDir });
       let stdout = '';
       let stderr = '';
 
@@ -126,7 +132,9 @@ describe('E2E Workflow', () => {
 
       setTimeout(() => {
         child.kill();
-        resolve({ error: null, stdout, stderr });
+        child.on('exit', () => {
+          resolve({ error: null, stdout, stderr });
+        });
       }, 2000);
     });
 

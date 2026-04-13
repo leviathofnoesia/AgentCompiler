@@ -23,7 +23,7 @@ describe('CLI Integration', () => {
   it('should initialize config', async () => {
     const cliPath = join(__dirname, '../../dist/cli.js');
     const result = await new Promise((resolve) => {
-      exec(`node ${cliPath} init`, { cwd: testDir }, (error, stdout, stderr) => {
+      exec(`node "${cliPath}" init`, { cwd: testDir }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });
@@ -46,7 +46,7 @@ describe('CLI Integration', () => {
 
     const cliPath = join(__dirname, '../../dist/cli.js');
     const result = await new Promise((resolve) => {
-      exec(`node ${cliPath} compile`, { cwd: testDir }, (error, stdout, stderr) => {
+      exec(`node "${cliPath}" compile`, { cwd: testDir }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });
@@ -72,7 +72,7 @@ describe('CLI Integration', () => {
 
     const cliPath = join(__dirname, '../../dist/cli.js');
     const result = await new Promise((resolve) => {
-      exec(`node ${cliPath} compile --dry-run`, { cwd: testDir }, (error, stdout, stderr) => {
+      exec(`node "${cliPath}" compile --dry-run`, { cwd: testDir }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });
@@ -88,7 +88,7 @@ describe('CLI Integration', () => {
 
     const cliPath = join(__dirname, '../../dist/cli.js');
     const result = await new Promise((resolve) => {
-      exec(`node ${cliPath} add skill-source --name my-skill`, { cwd: testDir }, (error, stdout, stderr) => {
+      exec(`node "${cliPath}" add skill-source --name my-skill`, { cwd: testDir }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });
@@ -100,7 +100,7 @@ describe('CLI Integration', () => {
   it('should list skills', async () => {
     const cliPath = join(__dirname, '../../dist/cli.js');
     const result = await new Promise((resolve) => {
-      exec(`node ${cliPath} list`, { cwd: testDir }, (error, stdout, stderr) => {
+      exec(`node "${cliPath}" list`, { cwd: testDir }, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });

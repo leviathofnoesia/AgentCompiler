@@ -365,8 +365,11 @@ function normalizePath(pathValue: string): string {
 
 function normalizeRootLabel(rootLabel: string): string {
     const normalized = normalizePath(rootLabel);
-    if (normalized.startsWith('.')) {
+    if (normalized.startsWith('./')) {
         return normalized;
+    }
+    if (normalized.startsWith('/')) {
+        return `.${normalized}`;
     }
     return `./${normalized}`;
 }

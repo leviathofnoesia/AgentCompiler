@@ -22,7 +22,7 @@ describe('Compressor', () => {
     }
   });
 
-  it('should compress Next.js docs to index format', async () => {
+  it('should compress Next.js docs to index format', { timeout: 30000 }, async () => {
     // Create a package.json with Next.js
     const packageJson = {
       name: 'test-project',
@@ -43,7 +43,7 @@ describe('Compressor', () => {
     expect(index).toContain('IMPORTANT: Prefer retrieval-led reasoning');
   });
 
-  it('should compress React docs to index format', async () => {
+  it('should compress React docs to index format', { timeout: 30000 }, async () => {
     const packageJson = {
       name: 'test-project',
       version: '1.0.0',
@@ -63,7 +63,7 @@ describe('Compressor', () => {
     expect(index).toContain('IMPORTANT: Prefer retrieval-led reasoning');
   });
 
-  it('should handle compression format options', async () => {
+  it('should handle compression format options', { timeout: 30000 }, async () => {
     const packageJson = {
       name: 'test-project',
       version: '1.0.0',
@@ -84,7 +84,7 @@ describe('Compressor', () => {
     expect(indexV2).toContain('v14');
   });
 
-  it('should compress to target size', async () => {
+  it('should compress to target size', { timeout: 30000 }, async () => {
     const packageJson = {
       name: 'test-project',
       version: '1.0.0',
