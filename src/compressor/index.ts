@@ -1,7 +1,7 @@
 /**
  * Index Compressor
  * Compresses documentation into <8KB indexes using Vercel's pipe-delimited format
- * Supports v1 (basic) and v2 (semantic) compression formats
+ * Supports v1 (basic), v2 (semantic), and v3 (TurboQuant semantic ranking) formats
  */
 
 import { readdir, stat, readFile } from 'fs/promises';
@@ -9,6 +9,7 @@ import { join, relative, basename, extname } from 'path';
 import type { DetectedSkill } from '../scanner/index.js';
 import { getRegistry } from '../registries/index.js';
 import { loadConfig, type ConflictConfig } from '../config/index.js';
+import { SectionRanker, type RankedSection, type RankingResult } from './ranker.js';
 
 const DEFAULT_TARGET_SIZE_BYTES = 8 * 1024;
 
@@ -22,7 +23,7 @@ interface FileNode {
 }
 
 interface CompressionOptions {
-    format?: 'v1' | 'v2';
+    format?: 'v1' | 'v2' | 'v3';
     targetSize?: number;
     cwd?: string;
     conflicts?: ConflictConfig;
@@ -36,35 +37,104 @@ export async function compressIndex(skill: DetectedSkill, options?: CompressionO
     const cacheDir = skill.path || join(cwd, '.agent-docs', skill.name);
     const registry = getRegistry(skill.name);
 
-    // Load config for compression settings
     const config = await loadConfig(cwd);
     const format = options?.format || config.compression?.format || 'v1';
     const targetSize = options?.targetSize || config.compression?.targetSize || DEFAULT_TARGET_SIZE_BYTES;
     const conflicts = options?.conflicts ?? config.conflicts;
     const rootLabel = normalizeRootLabel(relative(cwd, cacheDir));
 
-    // Build file tree
+    if (format === 'v3') {
+        return compressIndexV3(skill, cacheDir, cwd, rootLabel, targetSize, conflicts);
+    }
+
     const tree = await buildFileTree(cacheDir, format === 'v2');
 
-    // Apply conflict rules (filter or prioritize sections)
     const preferredPatterns = getPreferredPatterns(conflicts, skill.name);
     const filteredTree = applyConflictFilters(tree, cacheDir, conflicts, skill.name);
 
-    // Generate index with priority ordering
     const priority = registry?.priority || [];
     const orderedTree = prioritizeTree(filteredTree, priority, preferredPatterns, cacheDir);
 
-    // Format based on version
     let index = format === 'v2'
         ? formatIndexV2(skill, orderedTree, cacheDir, rootLabel)
         : formatIndexV1(skill, orderedTree, cacheDir, rootLabel);
 
-    // Compress if over target size
     if (Buffer.byteLength(index, 'utf-8') > targetSize) {
         index = compressAggressively(index, skill, targetSize);
     }
 
     return index;
+}
+
+async function compressIndexV3(
+    skill: DetectedSkill,
+    cacheDir: string,
+    cwd: string,
+    rootLabel: string,
+    targetSize: number,
+    conflicts: ConflictConfig | undefined
+): Promise<string> {
+    const registry = getRegistry(skill.name);
+    const preferredPatterns = getPreferredPatterns(conflicts, skill.name);
+    const filteredDir = applyConflictFiltersToPath(cacheDir, conflicts, skill.name);
+
+    const ranker = new SectionRanker({ targetSizeBytes: targetSize });
+    const ranking = await ranker.rankSections(filteredDir || cacheDir, cwd, skill.name);
+
+    if (ranking.sections.length === 0) {
+        const tree = await buildFileTree(cacheDir, false);
+        const filteredTree = applyConflictFilters(tree, cacheDir, conflicts, skill.name);
+        const priority = registry?.priority || [];
+        const orderedTree = prioritizeTree(filteredTree, priority, preferredPatterns, cacheDir);
+        return formatIndexV1(skill, orderedTree, cacheDir, rootLabel);
+    }
+
+    if (conflicts) {
+        const excludedPatterns = Object.entries(conflicts)
+            .filter(([, value]) => value.startsWith('prefer:') && value.slice('prefer:'.length).trim() !== skill.name)
+            .map(([pattern]) => pattern);
+        ranking.sections = ranking.sections.filter(section => {
+            const matchPath = section.path.toLowerCase();
+            return !excludedPatterns.some(pattern => matchesGlob(pattern, matchPath));
+        });
+    }
+
+    const priority = registry?.priority || [];
+    if (priority.length > 0) {
+        ranking.sections.sort((a, b) => {
+            const aPriority = priority.some(p => a.name.toLowerCase().includes(p.toLowerCase()) || a.path.toLowerCase().includes(p.toLowerCase()));
+            const bPriority = priority.some(p => b.name.toLowerCase().includes(p.toLowerCase()) || b.path.toLowerCase().includes(p.toLowerCase()));
+            if (aPriority && !bPriority) return -1;
+            if (!aPriority && bPriority) return 1;
+            return b.score - a.score;
+        });
+    }
+
+    const index = formatIndexV3(skill, ranking, rootLabel, targetSize);
+
+    if (Buffer.byteLength(index, 'utf-8') > targetSize) {
+        return compressAggressively(index, skill, targetSize);
+    }
+
+    return index;
+}
+
+function matchesGlob(pattern: string, target: string): boolean {
+    const escaped = pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*\*/g, '::DOUBLESTAR::')
+        .replace(/\*/g, '[^/]*')
+        .replace(/::DOUBLESTAR::/g, '.*')
+        .replace(/\?/g, '.');
+    return new RegExp(`^${escaped}$`).test(target);
+}
+
+function applyConflictFiltersToPath(
+    _cacheDir: string,
+    _conflicts: ConflictConfig | undefined,
+    _skillName: string
+): string | null {
+    return null;
 }
 
 /**
@@ -360,6 +430,56 @@ function formatIndexV2(skill: DetectedSkill, tree: FileNode[], rootDir: string, 
             }
         }
     }
+
+    return lines.join('\n');
+}
+
+function formatIndexV3(
+    skill: DetectedSkill,
+    ranking: RankingResult,
+    rootLabel: string,
+    targetSize: number
+): string {
+    const displayName = skill.displayName || skill.name;
+    const lines: string[] = [
+        `[${displayName} Docs Index]|v3|confidence:${ranking.projectRelevance.toFixed(2)}|root:${rootLabel}`,
+        `|IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for ${displayName} tasks.`,
+    ];
+
+    const breakingChanges = getBreakingChanges(skill.name, skill.version);
+    for (const change of breakingChanges) {
+        lines.push(`|BREAKING: ${change}`);
+    }
+
+    const rankedSectionNames = ranking.sections
+        .slice(0, 8)
+        .map(s => `${s.name}(${s.score.toFixed(2)})`)
+        .join(', ');
+    if (rankedSectionNames) {
+        lines.push(`|RANKED: ${rankedSectionNames}`);
+    }
+
+    const sectionPaths = new Map<string, string[]>();
+    for (const section of ranking.sections) {
+        const parts = section.path.replace(/\\/g, '/').split('/');
+        const dirParts = parts.slice(0, -1);
+        const fileName = parts[parts.length - 1];
+
+        const dirKey = dirParts.length > 0 ? dirParts.join('/') : '';
+        if (!sectionPaths.has(dirKey)) {
+            sectionPaths.set(dirKey, []);
+        }
+        sectionPaths.get(dirKey)!.push(fileName.replace(/\.mdx?$/, ''));
+    }
+
+    for (const [dirPath, files] of sectionPaths) {
+        const line = dirPath
+            ? `|${dirPath}:{${files.join(',')}}`
+            : `|{${files.join(',')}}`;
+        lines.push(line);
+    }
+
+    lines.push(`|META: method=${ranking.method} budget=${ranking.usedBudget}/${ranking.totalBudget} sections=${ranking.sections.length}`);
 
     return lines.join('\n');
 }

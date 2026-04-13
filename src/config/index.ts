@@ -17,7 +17,9 @@ export interface CustomSkillConfig {
 
 export interface CompressionConfig {
     targetSize?: number;
-    format?: 'v1' | 'v2';
+    format?: 'v1' | 'v2' | 'v3';
+    semanticRanking?: boolean;
+    embeddingModel?: string;
 }
 
 export interface ConflictConfig {
